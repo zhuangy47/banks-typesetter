@@ -1,0 +1,10 @@
+status: active
+
+meeting_times:
+  - date: wednesday
+    start_time: 19:00
+    end_time: 21:00
+    location: SC 1302
+
+blurb: |
+  Gamebuilders is a SIG focused on game development. We host game jams, game dev workshops and sometimes industry panels, but the main focus of the club is our semester projects, which are proposed and worked on by our members. Project leads will then present their project at our MVP and Final showcase to the rest of the club and any attendees! Gamebuilders works on all aspects of game development, including Art, Music, and Game Design, and is open to all skill levels, so don't be afraid to join even with no experience!

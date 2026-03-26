@@ -1,0 +1,44 @@
+volume: 43
+issue: 1
+date: "November 11, 2025"
+headline: "BANKS RETURNS"
+subtitle: "The Journal of the Association for Computing Machinery at the University of Illinois Urbana-Champaign"
+url: "https://banks.acm.illinois.edu"
+
+editors:
+  - "Yanni Zhuang"
+  - "Minh Duong"
+
+featured_email: "banks@acm.illinois.edu"
+
+# Exhaustive ordering of all orgs from the ACM core API.
+# Every org returned by the API must appear here or the build will error.
+
+directory_order:
+  - acm
+  - corporate_committee
+  - infrastructure_committee
+  - academic_committee
+  - social_committee
+  - marketing_committee
+  - mentorship_committee
+  - reflections_projections
+  - hackillinois
+  - gamebuilders
+  - glug
+  - icpc
+  - sigaida
+  - sigarch
+  - sigchi
+  - sigecom
+  - siggraph
+  - sigma
+  - sigmobile
+  - sigmusic
+  - signll
+  - sigplan
+  - sigpolicy
+  - sigpwny
+  - sigquantum
+  - sigrobotics
+  - sigtricity

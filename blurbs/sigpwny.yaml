@@ -1,0 +1,19 @@
+status: active
+
+meeting_times:
+  - date: sunday
+    start_time: 17:00
+    end_time: 18:00
+    location: SC 1404
+  - date: thursday
+    start_time: 18:00
+    end_time: 19:00
+    location: DCL 1310
+
+blurb: |
+  Learn how to hack! SIGPwny is the Special Interest Group for Information Security.
+  Our General meetings focus on the fundamentals of security, including topics on binary exploitation, web hacking, and cryptography.
+  We also play in hacking competitions, known as Capture the Flag (CTF).
+  Our Embedded Team focuses on hardware hacking and embedded systems security.
+  The Purple Team focuses on both offensive and defensive security techniques.
+  Join our Discord at https://sigpwny.com/discord!

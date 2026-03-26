@@ -1,0 +1,10 @@
+status: active
+
+meeting_times:
+  - date: monday
+    start_time: 17:00
+    end_time: 16:20
+    location: SC 2405
+
+blurb: |
+  SIGCHI is the special interest group for Human-Computer Interaction. We explore ways to design and make technology that solves problems or enhances the human experience in small ways. Every year, we focus on designing and building a project that incorporates principles of human-centered design and present it at Engineering Open House!

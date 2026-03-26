@@ -1,0 +1,10 @@
+status: active
+
+meeting_times:
+  - date: monday
+    start_time: 18:00
+    end_time: 19:00
+    location: SC 1304
+
+blurb: |
+  Hello, we’re SIGNLL, the SIG dedicated to NLP! Right now, our officers are Kush Bhardwaj, Saad Ahmad, Ryan Varghese, and Vinay Rajagopalan. Each semester, we give our members an introduction into the world of NLP by helping them create the NLP-related projects that they've always wanted to make! And at the time of writing, we’ve just started working on those projects! Some of the problems our members are working on include making small language models for specific tasks, a sports betting assistant, a resume parser, and more! If you’re worried about missing out, boy, do I have great news for you! Even though we’ve already started working on projects, you can still join! Just show up to our meetings (6-7 pm every Monday, in the Siebel Center for CS room 1304!) If you want, you can join one of the existing projects, or, if you have your own idea, feel free to form your own group and work on your own NLP-related project!

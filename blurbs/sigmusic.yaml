@@ -1,0 +1,10 @@
+status: active
+
+meeting_times:
+  - date: tuesday
+    start_time: 18:30
+    end_time: 20:00
+    location: CS 1304
+
+blurb: |
+  SIGMusic focuses on discussions and projects surrounding digital audio processing, audio hardware, and electroacoustic techniques for the creation of music. Under the leadership of Emmett Quan (CS + Music, '28) and William Lei (CS + Music, '28), the organization is currently creating digital guitar pedals using the Daisy framework. All are welcome to come to weekly Tuesday evening meetings, (6:30-8:00pm in Siebel CS 1304), regardless of experience with computers or audio! Join the Discord server to stay in the loop.

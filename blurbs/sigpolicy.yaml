@@ -1,0 +1,10 @@
+status: active
+
+meeting_times:
+  - date: tuesday
+    start_time: 19:00
+    end_time: 20:00
+    location: Biweeekly, Siebel CS 3401
+
+blurb: |
+  At SigPolicy, we aim to bring the tech events, news, and debates of the world to everyone at Illinois — that means you! Our meetings cover critical topics in tech, from chip control to social media funneling to online gambling. We do the research, so all you have to do is show up, listen to us for a few minutes, and dive into the discussion — no previous knowledge or experience with the topic needed! Coming up, we are having a social on the 4th, with Manolo’s and Mafia, to which everyone is welcome, and then diving into malicious AI — where we see it, what it means, and what we can do about it — on the 18th!

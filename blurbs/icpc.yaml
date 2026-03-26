@@ -1,0 +1,16 @@
+status: active
+
+meeting_times:
+  - date: thursday
+    start_time: 17:00
+    end_time: 19:00
+    location: SC 1302
+
+blurb: |
+  SIG-ICPC is a special interest group for the International Collegiate Programming Contest (ICPC) that runs under the ACM chapter at UIUC. The ICPC is an algorithmic programming contest for college students. It is the oldest, largest, and most prestigious programming contest in the world. More than 50,000 students participate in three-person teams representing more than 3,000 universities.
+
+  Here we foster a friendly environment for students to practice and train for not only ICPC, but also to improve their programming and problem solving skills. These skills prove to be beneficial in technical courses, programming interviews, and real life applications.
+
+  In the past 17 years, our UIUC has advanced to World Finals 16 times. Let's continue this legacy!
+
+  For more information, visit our website at [icpc.cs.illinois.edu](https://icpc.cs.illinois.edu) or join our Discord server at [discord.gg/icpc-uiuc](https://discord.gg/icpc-uiuc).

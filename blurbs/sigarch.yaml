@@ -1,0 +1,10 @@
+status: active
+
+meeting_times:
+  - date: wednesday
+    start_time: 17:00
+    end_time: 18:00
+    location: ECEB 3015
+
+blurb: |
+  SIGARCH at the University of Illinois Urbana-Champaign is a student-run group dedicated to exploring all things computer architecture — from processors and memory hierarchies to emerging trends in hardware design. We bring together students passionate about understanding and building computing systems through weekly discussions, paper reviews, and hands-on workshops. Whether you're diving into your first architecture project or already designing custom chips, SIGARCH provides a collaborative space to learn, share ideas, and grow alongside others who love hardware.

@@ -1,0 +1,16 @@
+status: active
+
+meeting_times:
+  - date: monday
+    start_time: 18:00
+    end_time: 19:30
+    location: Everitt 1306
+
+blurb: |
+    Ever wondered how AI actually works - or better yet, how to make it work? That’s what we do at AIDA. We explore the world of artificial intelligence and data analytics through hands-on projects, workshops, and demos that turn abstract concepts into real results.
+
+    Our beginner track, MLScope, walks you through the fundamentals of AI and machine learning with guided sessions and practical mini-projects - from predicting housing prices to analyzing massive textual datasets with large language models. For those ready to level up, our project track dives into real-world AI applications. This semester’s lineup includes six active projects, covering everything from sustainable recycling assistants to financial reasoning and sports analytics.
+
+    Whether you’re brand new to AI or already training deep learning models in your sleep, AIDA’s got something for you. Come learn, build, and collaborate with a group of curious minds who think data is cool (because it is).
+
+    Mondays at 6. Be there :D

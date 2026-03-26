@@ -1,0 +1,10 @@
+status: active
+
+meeting_times:
+  - date: sunday
+    start_time: 14:00
+    end_time: 15:00
+    location: SC 1302
+
+blurb: |
+  SIGGRAPH is UIUC’s main RSO about all things computer graphics. We host breadth talks, demos, project development, alumni talks, research paper deep-dives, and social events. Whether you are a beginner or experienced beyond your years, there is a place for you in SIGGRAPH to express your interests and meet like-minded people.

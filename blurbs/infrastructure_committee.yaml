@@ -1,0 +1,4 @@
+status: active
+
+blurb: |
+    The Infra Committee is responsible for managing ACM @ UIUC’s core software engineering and infrastructure efforts, both on-premises and in the cloud. Our main project is ACM core, a self-service platform for exec council members to handle event management, ticketing, access management, membership servicing, link shortening, and more.

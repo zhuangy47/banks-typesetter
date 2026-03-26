@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Banks Layout Editor</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <h1>Banks of the Boneyard</h1>
+      <span class="header-subtitle">Layout Editor</span>
+    </div>
+    <nav>
+      <button class="tab active" data-tab="layout">Layout</button>
+      <button class="tab" data-tab="articles">Articles</button>
+      <button class="tab" data-tab="config">Config &amp; Events</button>
+      <button class="tab" data-tab="build">Build</button>
+    </nav>
+    <div class="header-right">
+      <span id="save-indicator" class="save-indicator hidden">Unsaved changes</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- ==================== LAYOUT TAB ==================== -->
+    <section id="tab-layout" class="tab-content active">
+      <div class="layout-editor">
+        <!-- Left sidebar -->
+        <aside class="sidebar">
+          <div class="sidebar-section">
+            <h3>Pages</h3>
+            <div id="page-selector" class="page-selector"></div>
+            <div class="page-actions">
+              <button id="btn-add-page" class="btn btn-sm">+ Page</button>
+              <button id="btn-remove-page" class="btn btn-sm btn-danger">- Page</button>
+            </div>
+          </div>
+
+          <div class="sidebar-section">
+            <h3>Grid Settings</h3>
+            <div id="grid-settings" class="grid-settings"></div>
+          </div>
+
+          <div class="sidebar-section">
+            <h3>Tools</h3>
+            <div class="tool-group">
+              <button class="tool-btn active" data-tool="article" title="Draw article cells">
+                <span class="tool-icon">&#9998;</span> Draw
+              </button>
+              <button class="tool-btn" data-tool="image" title="Place grid image">
+                <span class="tool-icon">&#128247;</span> Image
+              </button>
+              <button class="tool-btn" data-tool="eraser" title="Erase cells">
+                <span class="tool-icon">&#10060;</span> Eraser
+              </button>
+            </div>
+            <div id="image-tool-options" class="tool-options hidden">
+              <label>Image file:
+                <select id="image-file-select"><option value="">-- select --</option></select>
+              </label>
+            </div>
+          </div>
+
+          <div class="sidebar-section sidebar-articles">
+            <h3>Articles
+              <button id="btn-add-to-layout" class="btn btn-sm" title="Add article to layout">+</button>
+            </h3>
+            <div id="article-palette"></div>
+          </div>
+
+          <div class="sidebar-section">
+            <button id="btn-save-layout" class="btn btn-primary btn-full">Save Layout</button>
+          </div>
+        </aside>
+
+        <!-- Grid area -->
+        <div class="grid-area">
+          <div class="grid-header">
+            <span id="grid-page-label">Page 1</span>
+            <span id="grid-cell-info" class="cell-info"></span>
+          </div>
+          <div class="grid-outer">
+            <!-- Column labels -->
+            <div class="grid-col-labels" id="grid-col-labels"></div>
+            <div class="grid-with-rows">
+              <!-- Row labels -->
+              <div class="grid-row-labels" id="grid-row-labels"></div>
+              <!-- The grid itself -->
+              <div class="grid" id="grid"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right panel: properties -->
+        <aside class="properties" id="properties-panel">
+          <h3>Properties</h3>
+          <div id="properties-content">
+            <p class="hint">Select an article to edit its properties.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ==================== ARTICLES TAB ==================== -->
+    <section id="tab-articles" class="tab-content">
+      <div class="articles-editor">
+        <div class="articles-list-panel">
+          <h3>Articles
+            <button id="btn-new-article" class="btn btn-sm">+ New</button>
+          </h3>
+          <div id="articles-list"></div>
+          <hr>
+          <h3>Letter from the Chair</h3>
+          <button id="btn-edit-lftc" class="btn btn-sm btn-full">Edit LFTC</button>
+        </div>
+        <div class="article-edit-panel">
+          <div id="article-editor-content">
+            <p class="hint">Select an article to edit.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== CONFIG TAB ==================== -->
+    <section id="tab-config" class="tab-content">
+      <div class="config-editor">
+        <div class="config-panel">
+          <h3>Publication Config</h3>
+          <form id="config-form">
+            <label>Volume <input type="number" name="volume" /></label>
+            <label>Issue <input type="number" name="issue" /></label>
+            <label>Date <input type="text" name="date" /></label>
+            <label>Headline <input type="text" name="headline" /></label>
+            <label>Subtitle <textarea name="subtitle" rows="2"></textarea></label>
+            <label>URL <input type="text" name="url" /></label>
+            <label>Featured Email <input type="text" name="featured_email" /></label>
+            <label>Editors (one per line) <textarea name="editors" rows="3"></textarea></label>
+            <button type="submit" class="btn btn-primary">Save Config</button>
+          </form>
+        </div>
+        <div class="config-panel">
+          <h3>Events
+            <button id="btn-add-event" class="btn btn-sm">+ Add</button>
+          </h3>
+          <div id="events-list"></div>
+          <button id="btn-save-events" class="btn btn-primary" style="margin-top: 12px">Save Events</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== BUILD TAB ==================== -->
+    <section id="tab-build" class="tab-content">
+      <div class="build-panel">
+        <h3>Build</h3>
+        <div class="build-actions">
+          <button class="btn btn-primary" id="btn-build-online">Build Online</button>
+          <button class="btn btn-primary" id="btn-build-print">Build Print</button>
+          <button class="btn" id="btn-build-both">Build Both</button>
+        </div>
+        <div class="build-status" id="build-status"></div>
+        <h3>Build Log</h3>
+        <pre class="build-log" id="build-log"></pre>
+        <div class="build-preview" id="build-preview"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal for adding articles to layout -->
+  <div class="modal-overlay hidden" id="modal-add-article">
+    <div class="modal">
+      <h3>Add Article to Layout</h3>
+      <select id="modal-article-select" size="8" style="width:100%"></select>
+      <div class="modal-actions">
+        <button class="btn" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-confirm">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for creating new article -->
+  <div class="modal-overlay hidden" id="modal-new-article">
+    <div class="modal">
+      <h3>New Article</h3>
+      <label>Slug (filename) <input type="text" id="new-article-slug" /></label>
+      <label>Title <input type="text" id="new-article-title" /></label>
+      <label>Authors (comma-separated) <input type="text" id="new-article-authors" /></label>
+      <div class="modal-actions">
+        <button class="btn" id="modal-new-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-new-confirm">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(typst --version)",
+      "Bash(python3:*)",
+      "Bash(pip3 install:*)",
+      "Bash(source .venv/bin/activate)",
+      "Bash(pip install:*)",
+      "Bash(python -m preprocess --mode online --output build/data-online.json)",
+      "Bash(python -m preprocess --mode print --output build/data-print.json)",
+      "Bash(brew list:*)",
+      "Bash(brew install:*)",
+      "Bash(typst compile:*)",
+      "Bash(make clean:*)",
+      "Bash(make all:*)",
+      "Bash(ls:*)",
+      "Bash(python3 -c \":*)",
+      "Bash(file:*)",
+      "Bash(make online:*)",
+      "Bash(open:*)",
+      "Bash(xargs -I{} basename {} .md)",
+      "WebFetch(domain:core.acm.illinois.edu)",
+      "Bash(pip3 list:*)",
+      "Bash(curl:*)",
+      "Bash(.venv/bin/pip install:*)",
+      "Bash(.venv/bin/python build.py --mode online 2>&1)",
+      "Bash(.venv/bin/python3 -c \"\nimport requests, json\norgs = requests.get\\('https://core.acm.illinois.edu/api/v1/organizations', timeout=15\\).json\\(\\)\nfor o in orgs:\n    if o.get\\('type'\\) == 'committee':\n        print\\(json.dumps\\({'name': o['name'], 'type': o['type']}, indent=2\\)\\)\n\" 2>&1)",
+      "Bash(.venv/bin/python build.py --mode print 2>&1)",
+      "Bash(pdftoppm -v)",
+      "Bash(pdftoppm:*)",
+      "Bash(.venv/bin/python build.py --mode both 2>&1)",
+      "Bash(grep -r \"width\\\\|inline\" /Users/yannizhuang/Documents/code/new_banks/articles/*.md)",
+      "Bash(.venv/bin/python -c \"\nfrom build import md_to_typst\ntext = 'Check out [our site]\\(https://example.com\\) for info.'\nprint\\('Online:', md_to_typst\\(text, 'online', 'test'\\)\\)\nprint\\('Print:', md_to_typst\\(text, 'print', 'test', qr_map={'https://example.com': 'qrcodes/abc.png'}\\)\\)\n\")",
+      "Bash(.venv/bin/python3 -c \"\nfrom build import validate_layout\nlayout = {\n    'grid': {'rows': 12, 'columns': 6, 'gutter': '4pt', 'text_gutter': '4pt'},\n    'articles': [{\n        'slug': 'banks',\n        'column_width': 3,\n        'placements': [{\n            'page': 1,\n            'cells': [[[0, 0], [5, 5]]],\n            'images': [\n                {'src': 'nonexistent.jpg', 'mode': 'grid', 'cells': [[[0, 0], [2, 2]]]},\n                {'src': 'also_fake.png', 'mode': 'inline'},\n            ]\n        }]\n    }]\n}\nfor e in validate_layout\\(layout, {'banks'}\\):\n    print\\(f'  {e}'\\)\n\")",
+      "Bash(python:*)",
+      "Bash(sips:*)",
+      "Bash(grep -r caption /Users/yannizhuang/Documents/code/new_banks --include=*.typ --include=*.json --include=*.yaml -n)",
+      "Bash(timeout 5 .venv/bin/python ui/app.py)",
+      "Bash(node --check ui/static/app.js)",
+      "Bash(make print:*)"
+    ]
+  }
+}

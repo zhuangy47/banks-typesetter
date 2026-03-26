@@ -1,0 +1,12 @@
+status: active
+
+meeting_times:
+  - date: saturday
+    start_time: 13:00
+    end_time: 15:00
+    location: SC 2405 and 1131
+
+blurb: |
+  SIGRobotics is like an open robotics lab for undergraduates! We have 40+ members across 9+ projects that include developing our own mobile robots, training robot arms with machine learning, exploring brain-computer interface applications, as well as projects tied to research-based competitions such as F1Tenth and RoboCup. We also attend a variety of robotics hackathons, and host recruiting events with robotics or robotics-adjacent companies including Neuralink this fall and General Biological last spring. 
+
+  Many of our projects do not require any prior experience, and we’re open to all majors, so feel free to come and learn about robotics! We also recently moved in to our new lab space in room 1131 in Siebel CS, and frequently host open-hours where members can come in and work on their projects. Join our discord to learn more! 

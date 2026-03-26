@@ -1,0 +1,10 @@
+status: active
+
+meeting_times:
+  - date: wednesday
+    start_time: 18:00
+    end_time: 19:00
+    location: SC 1302
+
+blurb: |
+  GLUG is dedicated to learning about the fundamentals of operating systems, with an emphasis on Linux and UNIX-based operating systems. We talk about a wide variety of concepts - some examples include self-hosting, service managers, Linux distros, networking, privacy/cryptography, and general news in the free and open source software (FOSS) community. If any of these topics sound interesting to you, join us on Wednesdays from 6-7pm at Siebel CS 1302! Everyone is welcome, all talks are beginner-friendly, and you definitely don't have to use Linux to show up. Our meeting schedule and Discord/Matrix servers are linked on our website, at [https://lug.acm.illinois.edu](https://lug.acm.illinois.edu).

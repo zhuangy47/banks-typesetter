@@ -1,0 +1,16 @@
+status: active
+
+meeting_times:
+  - date: wednesday
+    start_time: 17:00
+    end_time: 18:00
+    location: Siebel 1302
+
+blurb: |
+  Interested in having a programming language debate? Want to discuss your favorite formal verifier? Maybe even learn some category theory while you’re at it?
+
+  Sigplan is the place to casually meet other fellow PL enthusiasts (often to some pizza : D) and discuss related topics, be it in compilers, functional programming, formal verification, or mathematical logic and type theory (with its endless applications to both programming and math, or even the tangentially related but deep discussion of what mathematics even *is*). If these topics seem daunting, don’t worry since all are welcome to join with or without background, and we encourage anyone to come learn!
+
+  Besides the opportunity for socials and presentations on intriguing and requested topics, anyone is further welcome to give their own presentations. Whether to share a related topic they’re passionate about, or as motivation to encourage self learning and practice communication of said topics.
+
+  Sigplan meets biweekly, with the next meeting on December 3rd. We encourage joining our discord to stay up to date with announcements, (lecture and guest speaker days will also be recorded and posted there). If there are any questions, feel free to reach out to one of our two chairs either by email or discord.

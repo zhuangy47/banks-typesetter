@@ -1,0 +1,5 @@
+events:
+  - name: "Weekly Social Hour"
+    date: "Every Friday"
+    time: "5:00 PM - 6:00 PM"
+    location: "Legends"
