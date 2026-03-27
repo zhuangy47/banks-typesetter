@@ -37,7 +37,10 @@
       "Bash(grep -r caption /Users/yannizhuang/Documents/code/new_banks --include=*.typ --include=*.json --include=*.yaml -n)",
       "Bash(timeout 5 .venv/bin/python ui/app.py)",
       "Bash(node --check ui/static/app.js)",
-      "Bash(make print:*)"
+      "Bash(make print:*)",
+      "Bash(typst query:*)",
+      "Bash(make online-debug:*)",
+      "Bash(make print-debug:*)"
     ]
   }
 }

@@ -1,6 +1,6 @@
 PYTHON := .venv/bin/python
 
-.PHONY: all online print clean setup ui
+.PHONY: all online print clean setup ui online-debug print-debug
 
 all: setup
 	$(PYTHON) build.py --mode both
@@ -13,6 +13,12 @@ print: setup
 
 strict: setup
 	$(PYTHON) build.py --mode print --strict
+
+online-debug: setup
+	$(PYTHON) build.py --mode online --debug
+
+print-debug: setup
+	$(PYTHON) build.py --mode print --debug
 
 setup: .venv/.installed
 

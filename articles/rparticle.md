@@ -1,7 +1,7 @@
 ---
-title: "Reflections | Projections 2025 Recap"
+title: Reflections | Projections 2025 Recap
 authors:
-  - "Cole Jordan"
+- Cole Jordan
 ---
 
 **Reflections | Projections 2025** is officially in the books! The Midwest’s largest student-run technology conference has concluded its 31st annual conference since it started in 1995. Hosted from **Tuesday, September 16th to Saturday, September 20th**, this year’s conference featured speakers from a wide range of fields in technology, including startups, autonomous vehicles, and artificial intelligence. We also hosted corporate events from HRT, Qualcomm, Aechelon, and Capital One, with the goal of providing students the opportunity to prepare for their future careers. As a conference made for students by students, we know what our attendees are looking for and design the entire conference around it.
@@ -12,6 +12,7 @@ authors:
 - **Reflect:** Take a look at the current state of technology and learn from innovators who have shaped the industry.
 - **Project:** Apply skills and knowledge towards the future by networking with companies and preparing for one’s career.
 
+<!-- colbreak -->
 
 ## The Theme
 

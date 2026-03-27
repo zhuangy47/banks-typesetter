@@ -20,6 +20,7 @@ articles:
     full_width_header: true
     images:
       - src: icpc.jpg
+        scale: 70
     placements:
       - page: 1
         cells:
@@ -116,3 +117,4 @@ articles:
       - page: 5
         cells:
           - [[0, 0], [10, 5]]
+

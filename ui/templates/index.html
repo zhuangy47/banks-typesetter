@@ -30,6 +30,15 @@
         <!-- Left sidebar -->
         <aside class="sidebar">
           <div class="sidebar-section">
+            <h3>Layout Mode</h3>
+            <div class="mode-selector">
+              <button class="mode-btn active" data-mode="online">Online</button>
+              <button class="mode-btn" data-mode="print">Print</button>
+            </div>
+            <button id="btn-copy-layout" class="btn btn-sm btn-full" style="margin-top:6px">Copy to other mode</button>
+          </div>
+
+          <div class="sidebar-section">
             <h3>Pages</h3>
             <div id="page-selector" class="page-selector"></div>
             <div class="page-actions">
@@ -158,11 +167,16 @@
           <button class="btn btn-primary" id="btn-build-online">Build Online</button>
           <button class="btn btn-primary" id="btn-build-print">Build Print</button>
           <button class="btn" id="btn-build-both">Build Both</button>
+          <button class="btn" id="btn-build-online-debug">Online Debug</button>
+          <button class="btn" id="btn-build-print-debug">Print Debug</button>
         </div>
         <div class="build-status" id="build-status"></div>
+        <div class="build-preview" id="build-preview">
+          <div class="preview-tabs" id="preview-tabs"></div>
+          <div class="preview-frame" id="preview-frame"></div>
+        </div>
         <h3>Build Log</h3>
         <pre class="build-log" id="build-log"></pre>
-        <div class="build-preview" id="build-preview"></div>
       </div>
     </section>
   </main>

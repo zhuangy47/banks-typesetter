@@ -1,0 +1,158 @@
+# layout.yaml -- Grid-based article placement
+#
+# Each page is a grid of rows × columns (default 12 × 6).
+# Articles specify which grid cells they occupy and how wide
+# their text columns should be (in grid units).
+#
+# Cell syntax (coordinates are [row, col], origin top-left):
+#   [row, col]                            — single cell
+#   [[row_start, col_start], [row_end, col_end]] — inclusive rectangle
+#
+# Images have two modes:
+#   mode: grid   — positioned at specific grid cells (must be rectangular,
+#                   must be within the article's cells). Removed from markdown body.
+#                   Caption auto-extracted from markdown alt text, or set explicitly:
+#                     caption: "Photo credit: John Doe"
+#                   Alignment within the cell box (default: center for both):
+#                     x-alignment: left | center | right
+#                     y-alignment: left | center | right
+#   mode: inline — rendered inline where the image appears in the markdown.
+#                   Optional "scale" sets width as % of text column (default 100).
+#
+# Per-article display options (all optional):
+#   full_width_header: true  — title/author spans full article width above columns
+#   column_gap: 8pt          — gap width between text columns (default: grid.text_gutter)
+#   column_separator: true   — draw a vertical rule between columns
+#   show_border: true        — draw an outline around the article bounding box
+
+grid:
+  rows: 12
+  columns: 6
+  gutter: 8pt
+  text_gutter: 8pt
+
+articles:
+  # --- Page 1 ---
+  - slug: banks
+    column_width: 3
+    full_width_header: true
+    placements:
+      - page: 1
+        cells:
+          - [[0, 0], [4, 5]]       # top half, full width
+
+  - slug: rparticle
+    full_width_header: true
+    column_width: 2
+    placements:
+      - page: 1
+        cells:
+          - [[5, 0], [9, 5]]      # bottom half, full width
+        images:
+          - src: driving_innovation_showcase.jpg
+            mode: grid
+            cells:
+              - [[10, 0], [11, 1]]
+          - src: career_fair.jpg
+            mode: grid
+            cells:
+              - [[10, 2], [11, 3]]
+          - src: full_staff.png
+            mode: grid
+            cells:
+              - [[10, 4], [11, 5]]
+
+  # --- Page 2 ---
+  - slug: qiskitfallfest
+    full_width_header: true
+    column_width: 2
+    column_separator: true
+    placements:
+      - page: 2
+        cells:
+          - [[0, 0], [6, 3]]     
+          - [[4, 4], [6, 5]]
+        images:
+          - src: QiskitFallFest.png
+            mode: grid
+            cells:
+              - [[0, 4], [3, 5]]
+
+  - slug: icpc
+    column_width: 2
+    show_border: true
+    full_width_header: true
+    placements:
+      - page: 2
+        cells:
+          - [[7, 0], [11, 1]]       
+          - [[7, 2], [8, 3]]       
+        images:
+          - src: icpc.jpg
+            mode: grid
+            cells:
+              - [[9, 2], [11, 3]]
+
+  - slug: gamebuilders
+    full_width_header: true
+    column_width: 2
+    placements:
+      - page: 2
+        cells:
+          - [[7, 4], [11, 5]]      # bottom half
+
+  # --- Page 3 ---
+
+  - slug: robotics
+    full_width_header: true
+    column_width: 2
+    placements:
+      - page: 3
+        cells:
+          - [[0, 0], [5, 5]]  
+        images:
+          - src: SIGRobotics_Seeed_Team.jpg
+            mode: inline
+          - src: SIGRobotics_CalHacks_Team.jpeg
+            mode: inline
+
+
+  - slug: sigplan
+    full_width_header: true
+    column_width: 2
+    placements:
+      - page: 3
+        cells:
+          - [[8, 0], [11, 1]]
+          - [[6, 2], [11, 5]]
+        images:
+          - src: sigplan.png
+            mode: grid
+            cells:
+              - [[6, 0], [7, 1]]
+
+  # --- Page 4 ---
+  - slug: signll
+    full_width_header: true
+    column_width: 3
+    placements:
+      - page: 4
+        cells:
+          - [[0, 0], [5, 5]]     
+
+
+  - slug: siggraph
+    full_width_header: true
+    column_width: 3
+    placements:
+      - page: 4
+        cells:
+          - [[6, 0], [11, 2]]       
+
+  - slug: sigecom
+    full_width_header: true
+    column_width: 3
+    placements:
+      - page: 4
+        cells:
+          - [[6, 3], [11, 5]]      # bottom half

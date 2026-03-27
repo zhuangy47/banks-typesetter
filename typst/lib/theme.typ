@@ -15,7 +15,7 @@
 
 // Font sizes
 #let title-size = 36pt
-#let headline-size = 48pt
+#let headline-size = 28pt
 #let subtitle-size = 8pt
 #let section-heading-size = 16pt
 #let article-title-size = 14pt

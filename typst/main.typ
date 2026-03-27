@@ -8,6 +8,7 @@
 
 // Read mode from CLI input
 #let mode = sys.inputs.at("mode", default: "online")
+#let debug = sys.inputs.at("debug", default: "false") == "true"
 
 // Load all data from build/data.json
 #let data = json("/build/data.json")
@@ -45,7 +46,7 @@
 
 #for page-num in range(1, num-pages + 1) {
   pagebreak()
-  render-article-page(page-num, data.layout, data.articles, mode)
+  render-article-page(page-num, data.layout, data.articles, mode, debug: debug)
 }
 
 // === Directory ===

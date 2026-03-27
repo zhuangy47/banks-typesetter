@@ -17,7 +17,7 @@
 }
 
 // Render a single article page with all its articles
-#let render-article-page(page-num, layout-data, articles-data, mode) = {
+#let render-article-page(page-num, layout-data, articles-data, mode, debug: false) = {
   let grid-raw = layout-data.grid
   let grid-config = (
     cols: grid-raw.columns,
@@ -37,6 +37,7 @@
           placement: placement,
           all-placements: article.placements,
           full-width-header: article.at("full_width_header", default: false),
+          full-width-footer: article.at("full_width_footer", default: false),
           column-gap: article.at("column_gap", default: none),
           column-separator: article.at("column_separator", default: false),
           show-border: article.at("show_border", default: false),
@@ -121,15 +122,9 @@
     }
 
     // Raw article text (used by both paths)
-    let raw-body = {
-      if is-multi-page {
-        include("/build/articles/" + slug + "-part" + str(page-index) + ".typ")
-      } else {
-        include("/build/articles/" + slug + ".typ")
-      }
-    }
+    let raw-body = include("/build/articles/" + slug + ".typ")
 
-    // Build body content (for rectangular path — includes styling + footer)
+    // Build body content (for rectangular path — text only, no footer)
     let body-content = {
       set text(size: body-size, font: body-font)
       show link: it => {
@@ -141,8 +136,10 @@
       }
 
       raw-body
+    }
 
-      // Double rule at end of article (last page or single-page)
+    // Build footer content (placed separately so it stays visible on overflow)
+    let rect-footer = {
       if is-last-page or not is-multi-page {
         v(6pt)
         block(spacing: 0pt, {
@@ -152,10 +149,8 @@
           line(length: 100%, stroke: 1pt + rule-color)
         })
       }
-
-      // "Continued on page #" marker at bottom
       if is-multi-page and not is-last-page {
-        v(1fr)
+        v(6pt)
         align(right,
           text(size: small-size, style: "italic")[
             Continued on page #str(all-pages.at(page-index + 1) + 1)
@@ -222,27 +217,91 @@
         raw-body,
         footer-content: footer,
         full-width-header: use-full-header,
+        full-width-footer: art.full-width-footer,
         col-gap: col-gap,
         col-separator: art.column-separator,
         show-border: art.show-border,
         images: img-data,
         grid: grid-config,
+        debug: debug,
       )
     } else {
       // --- Rectangular: place-article-text ---
+      // For multi-page articles, always use full-width header so body
+      // contains only article text (needed for atom-based page splitting).
+      let separate-header = use-full-header or is-multi-page
       place-article-text(
         cells,
         grid-images,
         column-width,
         slug,
-        if use-full-header { header-content } else { none },
-        if use-full-header { body-content } else { header-content + body-content },
+        if separate-header { header-content } else { none },
+        if separate-header { body-content } else { header-content + body-content },
+        footer-content: rect-footer,
+        full-width-footer: art.full-width-footer,
         col-gap: col-gap,
         col-separator: art.column-separator,
         show-border: art.show-border,
         images: img-data,
         grid: grid-config,
+        raw-body: if is-multi-page { raw-body } else { none },
+        page-index: page-index,
+        is-last-page: is-last-page,
+        debug: debug,
       )
+    }
+
+    // Debug: draw article cell bounding box and image cell bounding boxes
+    if debug {
+      // Article cells — blue dashed outline
+      draw-cell-border(cells, grid: grid-config, border-stroke: 1pt + rgb("#0066ff80"))
+      // Slug label at top-left of article bbox
+      let ab = cells-bbox(cells)
+      let ar = cell-rect(ab.col-start, ab.row-start, ab.col-end, ab.row-end, grid: grid-config)
+      place(top + left, dx: ar.x + 2pt, dy: ar.y + 2pt,
+        block(fill: rgb("#0066ffcc"), inset: 2pt, radius: 2pt,
+          text(size: 5pt, fill: white, weight: "bold")[#slug]
+        )
+      )
+      // Grid-mode image cells — green dashed outline
+      for img in grid-images {
+        draw-cell-border(img.cells, grid: grid-config, border-stroke: 1pt + rgb("#00aa0080"))
+        let ib = cells-bbox(img.cells)
+        let ir = cell-rect(ib.col-start, ib.row-start, ib.col-end, ib.row-end, grid: grid-config)
+        place(top + left, dx: ir.x + 2pt, dy: ir.y + 2pt,
+          block(fill: rgb("#00aa00cc"), inset: 2pt, radius: 2pt,
+            text(size: 4pt, fill: white)[img]
+          )
+        )
+      }
+    }
+  }
+
+  // Debug: draw grid cell outlines and row,col labels
+  if debug {
+    let cw = (content-width - (grid-config.cols - 1) * grid-config.gutter) / grid-config.cols
+    let ch = (content-height - (grid-config.rows - 1) * grid-config.gutter) / grid-config.rows
+    for r in range(grid-config.rows) {
+      for c in range(grid-config.cols) {
+        let x = c * (cw + grid-config.gutter)
+        let y = r * (ch + grid-config.gutter)
+        place(
+          top + left,
+          dx: x,
+          dy: y,
+          block(
+            width: cw,
+            height: ch,
+            stroke: 0.25pt + rgb("#ff000040"),
+          ),
+        )
+        place(
+          top + left,
+          dx: x + 1pt,
+          dy: y + 1pt,
+          text(size: 4pt, fill: rgb("#ff000080"))[#r,#c],
+        )
+      }
     }
   }
 }

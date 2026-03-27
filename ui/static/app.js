@@ -18,6 +18,7 @@ const S = {
   config: null,           // config.yaml data
   events: null,           // events.yaml data
 
+  layoutMode: 'online',   // 'online' | 'print' — which layout file to edit
   currentPage: 1,
   totalPages: 0,
   selectedSlug: null,     // currently-selected article slug
@@ -63,10 +64,22 @@ function toast(msg, type = 'success') {
 // ─── Data loading ────────────────────────────────────────────────────
 async function loadAll() {
   [S.layout, S.articles, S.images] = await Promise.all([
-    api('/layout'),
+    api(`/layout?mode=${S.layoutMode}`),
     api('/articles'),
     api('/images'),
   ]);
+  // Normalize layout: ensure articles and placements are always arrays
+  if (!S.layout || typeof S.layout !== 'object') {
+    S.layout = { grid: { rows: 12, columns: 6, gutter: '8pt', text_gutter: '8pt' }, articles: [] };
+  }
+  if (!Array.isArray(S.layout.articles)) S.layout.articles = [];
+  for (const art of S.layout.articles) {
+    if (!Array.isArray(art.placements)) art.placements = [];
+    for (const pl of art.placements) {
+      if (!Array.isArray(pl.cells)) pl.cells = [];
+      if (!Array.isArray(pl.images)) pl.images = [];
+    }
+  }
   computePages();
 }
 
@@ -269,11 +282,13 @@ function renderGrid() {
       if (owner) {
         cell.style.backgroundColor = colorFor(owner.slug);
         cell.classList.add('occupied');
-        cell.textContent = owner.slug.substring(0, 6);
         if (owner.type === 'image') {
           cell.classList.add('image-cell');
+          const imgName = owner.imageSrc.replace(/\.[^/.]+$/, '');
+          cell.textContent = `${owner.slug.substring(0, 4)}:${imgName.substring(0, 4)}`;
           cell.title = `${owner.slug} — image: ${owner.imageSrc}`;
         } else {
+          cell.textContent = owner.slug.substring(0, 6);
           cell.title = `${owner.slug}`;
         }
       }
@@ -437,14 +452,29 @@ function placeImage(r1, c1, r2, c2) {
   let pl = art.placements.find(p => p.page === S.currentPage);
   if (!pl) { toast('Article has no placement on this page', 'error'); return; }
   if (!pl.images) pl.images = [];
-  pl.images.push({
-    src: imgFile,
-    mode: 'grid',
-    cells: [[[r1, c1], [r2, c2]]],
-    'x-alignment': 'center',
-    'y-alignment': 'center',
-    border: 1,
-  });
+
+  // Merge with existing image that has the same src, instead of creating duplicates
+  const existing = pl.images.find(img => img.src === imgFile && img.mode === 'grid');
+  if (existing) {
+    const existingCells = [];
+    for (const cr of (existing.cells || [])) {
+      for (const cell of expandRange(cr)) existingCells.push(cell);
+    }
+    for (let r = r1; r <= r2; r++)
+      for (let c = c1; c <= c2; c++)
+        if (!existingCells.some(([er, ec]) => er === r && ec === c))
+          existingCells.push([r, c]);
+    existing.cells = cellsToRanges(existingCells);
+  } else {
+    pl.images.push({
+      src: imgFile,
+      mode: 'grid',
+      cells: [[[r1, c1], [r2, c2]]],
+      'x-alignment': 'center',
+      'y-alignment': 'center',
+      border: 1,
+    });
+  }
 }
 
 // =====================================================================
@@ -483,6 +513,7 @@ function renderArticlePalette() {
       renderArticlePalette();
       renderProperties();
       renderToolButtons();
+      populateImageSelect();
     };
     chip.querySelector('.remove-btn').onclick = (e) => {
       e.stopPropagation();
@@ -558,6 +589,10 @@ function renderProperties() {
       Full-width header
     </label>
     <label class="checkbox-label">
+      <input type="checkbox" id="prop-full-footer" ${art.full_width_footer ? 'checked' : ''} />
+      Full-width footer
+    </label>
+    <label class="checkbox-label">
       <input type="checkbox" id="prop-col-sep" ${art.column_separator ? 'checked' : ''} />
       Column separator
     </label>
@@ -580,28 +615,121 @@ function renderProperties() {
   }
   html += `</div>`;
 
-  // ── Images section (current page) ──────────────────────────────────
+  // ── Article images section ───────────────────────────────────────────
+  // Gather all images referenced in this article's markdown
+  const articleMeta = S.articles.find(a => a.slug === art.slug);
+  const mdImages = (articleMeta && articleMeta.images) || [];
+
+  // Gather all placed/configured images for this article
+  // Inline images live at article level, grid images in placements
+  const allPlaced = [];
+  for (const img of (art.images || [])) {
+    allPlaced.push({ ...img, mode: 'inline', _level: 'article' });
+  }
+  for (const p of art.placements) {
+    for (const img of (p.images || [])) {
+      allPlaced.push({ ...img, _page: p.page, _level: 'placement' });
+    }
+  }
+
+  // Current page placement (for editing)
   const pl = art.placements.find(p => p.page === S.currentPage);
   const imgs = pl ? (pl.images || []) : [];
 
-  html += `<div class="prop-images"><label>Images (page ${S.currentPage})</label>`;
+  html += `<div class="prop-images"><label>Article Images</label>`;
 
-  if (imgs.length === 0) {
-    html += `<div style="font-size:11px;color:var(--text-light)">No images on this page</div>`;
+  if (mdImages.length === 0) {
+    html += `<div style="font-size:11px;color:var(--text-light)">No images in article markdown</div>`;
   }
 
-  const alignOpts = ['left', 'center', 'right'];
+  for (let mi = 0; mi < mdImages.length; mi++) {
+    const mdImg = mdImages[mi];
+    const placed = allPlaced.find(p => p.src === mdImg.src);
+    const placedOnThisPage = imgs.findIndex(p => p.src === mdImg.src);
+    const statusLabel = placed ? (placed.mode === 'inline' ? 'inline' : `grid (p${placed._page})`) : 'unplaced';
+    const statusClass = placed ? `mode-${placed.mode}` : 'mode-unplaced';
 
-  for (let i = 0; i < imgs.length; i++) {
-    const img = imgs[i];
-    const isGrid = img.mode === 'grid';
+    html += `<div class="prop-image-item">
+      <div class="img-header">
+        <span class="img-mode-badge ${statusClass}">${statusLabel}</span>
+        <span style="font-size:10px;color:var(--text-light);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1" title="${escHtml(mdImg.src)}">${escHtml(mdImg.src)}</span>
+      </div>
+      <div class="img-preview">
+        <img src="/api/images/${encodeURIComponent(mdImg.src)}" alt="${escHtml(mdImg.src)}" />
+      </div>`;
+
+    if (!placed) {
+      // Unplaced: show buttons to add as inline or grid
+      html += `<div class="img-add-buttons">
+        <button class="btn btn-sm img-add-inline" data-src="${escHtml(mdImg.src)}" data-caption="${escHtml(mdImg.caption || '')}">+ Inline</button>
+        <button class="btn btn-sm img-add-grid" data-src="${escHtml(mdImg.src)}" data-caption="${escHtml(mdImg.caption || '')}">+ Grid</button>
+      </div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  html += `</div>`; // close article images
+
+  // ── Inline images (article-level) ───────────────────────────────────
+  const inlineImgs = art.images || [];
+  html += `<div class="prop-images"><label>Inline Images</label>`;
+
+  if (inlineImgs.length === 0) {
+    html += `<div style="font-size:11px;color:var(--text-light)">No inline images configured</div>`;
+  }
+
+  for (let i = 0; i < inlineImgs.length; i++) {
+    const img = inlineImgs[i];
     const imgSrcOpts = S.images.map(f =>
       `<option value="${f}" ${f === img.src ? 'selected' : ''}>${f}</option>`
     ).join('');
 
     html += `<div class="prop-image-item" data-img-idx="${i}">
       <div class="img-header">
-        <span class="img-mode-badge mode-${img.mode}">${img.mode}</span>
+        <span class="img-mode-badge mode-inline">inline</span>
+        <button class="inline-img-remove" data-idx="${i}" title="Remove image">&times;</button>
+      </div>
+      <div class="img-preview">
+        <img src="/api/images/${encodeURIComponent(img.src)}" alt="${escHtml(img.src)}" />
+      </div>
+      <div class="img-field">
+        <label>File</label>
+        <select class="inline-img-src" data-idx="${i}">${imgSrcOpts}</select>
+
+        <label>Caption</label>
+        <input type="text" class="inline-img-caption" data-idx="${i}" value="${escHtml(img.caption || '')}" placeholder="optional" />
+
+        <label>Border</label>
+        <input type="number" class="inline-img-border" data-idx="${i}" value="${img.border != null ? img.border : 1}" min="0" step="0.5" />
+
+        <label>Scale %</label>
+        <input type="number" class="inline-img-scale" data-idx="${i}" value="${img.scale != null ? img.scale : 100}" min="1" max="100" />
+      </div>
+    </div>`;
+  }
+
+  html += `</div>`; // close inline images
+
+  // ── Grid images on this page (editable) ────────────────────────────
+  html += `<div class="prop-images"><label>Grid Images (page ${S.currentPage})</label>`;
+
+  if (imgs.length === 0) {
+    html += `<div style="font-size:11px;color:var(--text-light)">No grid images on this page</div>`;
+  }
+
+  const alignOpts = ['left', 'center', 'right'];
+
+  for (let i = 0; i < imgs.length; i++) {
+    const img = imgs[i];
+    if (img.mode === 'inline') continue; // skip any legacy inline entries
+    const imgSrcOpts = S.images.map(f =>
+      `<option value="${f}" ${f === img.src ? 'selected' : ''}>${f}</option>`
+    ).join('');
+
+    html += `<div class="prop-image-item" data-img-idx="${i}">
+      <div class="img-header">
+        <span class="img-mode-badge mode-grid">grid</span>
         <button class="img-remove" data-idx="${i}" title="Remove image">&times;</button>
       </div>
       <div class="img-preview">
@@ -612,20 +740,12 @@ function renderProperties() {
         <label>File</label>
         <select class="img-src" data-idx="${i}">${imgSrcOpts}</select>
 
-        <label>Mode</label>
-        <select class="img-mode" data-idx="${i}">
-          <option value="grid" ${isGrid ? 'selected' : ''}>grid</option>
-          <option value="inline" ${!isGrid ? 'selected' : ''}>inline</option>
-        </select>
-
         <label>Caption</label>
         <input type="text" class="img-caption" data-idx="${i}" value="${escHtml(img.caption || '')}" placeholder="optional" />
 
         <label>Border</label>
-        <input type="number" class="img-border" data-idx="${i}" value="${img.border != null ? img.border : 1}" min="0" step="0.5" />`;
+        <input type="number" class="img-border" data-idx="${i}" value="${img.border != null ? img.border : 1}" min="0" step="0.5" />
 
-    if (isGrid) {
-      html += `
         <label>X-align</label>
         <select class="img-x-align" data-idx="${i}">
           ${alignOpts.map(a => `<option value="${a}" ${(img['x-alignment']||'center') === a ? 'selected' : ''}>${a}</option>`).join('')}
@@ -634,23 +754,17 @@ function renderProperties() {
         <label>Y-align</label>
         <select class="img-y-align" data-idx="${i}">
           ${alignOpts.map(a => `<option value="${a}" ${(img['y-alignment']||'center') === a ? 'selected' : ''}>${a}</option>`).join('')}
-        </select>`;
-    } else {
-      html += `
-        <label>Scale %</label>
-        <input type="number" class="img-scale" data-idx="${i}" value="${img.scale != null ? img.scale : 100}" min="1" max="100" />`;
-    }
+        </select>
+      </div>`;
 
-    html += `</div>`; // close .img-field
-
-    if (isGrid && img.cells) {
+    if (img.cells) {
       html += `<div class="img-cells">Cells: ${JSON.stringify(img.cells)}</div>`;
     }
 
     html += `</div>`; // close .prop-image-item
   }
 
-  html += `</div>`; // close .prop-images
+  html += `</div>`; // close placed images
 
   container.innerHTML = html;
 
@@ -658,6 +772,7 @@ function renderProperties() {
   const setArt = (key, val) => { art[key] = val; markDirty(); };
   document.getElementById('prop-col-width').onchange = (e) => setArt('column_width', +e.target.value);
   document.getElementById('prop-full-header').onchange = (e) => setArt('full_width_header', e.target.checked || undefined);
+  document.getElementById('prop-full-footer').onchange = (e) => setArt('full_width_footer', e.target.checked || undefined);
   document.getElementById('prop-col-sep').onchange = (e) => setArt('column_separator', e.target.checked || undefined);
   document.getElementById('prop-border').onchange = (e) => setArt('show_border', e.target.checked || undefined);
   document.getElementById('prop-col-gap').onchange = (e) => {
@@ -665,11 +780,52 @@ function renderProperties() {
     setArt('column_gap', v || undefined);
   };
 
-  // ── Wire up image property handlers ────────────────────────────────
+  // ── Wire up inline image property handlers (article-level) ─────────
+  {
+    const setInlineImg = (idx, key, val) => {
+      if (val === '' || val === undefined) delete art.images[idx][key];
+      else art.images[idx][key] = val;
+      markDirty();
+    };
+
+    container.querySelectorAll('.inline-img-src').forEach(el => {
+      el.onchange = () => {
+        setInlineImg(+el.dataset.idx, 'src', el.value);
+        const item = el.closest('.prop-image-item');
+        const preview = item?.querySelector('.img-preview img');
+        if (preview) preview.src = `/api/images/${encodeURIComponent(el.value)}`;
+      };
+    });
+
+    container.querySelectorAll('.inline-img-caption').forEach(el => {
+      el.onchange = () => setInlineImg(+el.dataset.idx, 'caption', el.value.trim());
+    });
+
+    container.querySelectorAll('.inline-img-border').forEach(el => {
+      el.onchange = () => setInlineImg(+el.dataset.idx, 'border', +el.value);
+    });
+
+    container.querySelectorAll('.inline-img-scale').forEach(el => {
+      el.onchange = () => {
+        const v = Math.max(1, Math.min(100, +el.value || 100));
+        el.value = v;
+        setInlineImg(+el.dataset.idx, 'scale', v);
+      };
+    });
+
+    container.querySelectorAll('.inline-img-remove').forEach(btn => {
+      btn.onclick = () => {
+        art.images.splice(+btn.dataset.idx, 1);
+        markDirty();
+        renderProperties();
+      };
+    });
+  }
+
+  // ── Wire up grid image property handlers (placement-level) ────────
   if (pl) {
     const imgList = pl.images || [];
 
-    // Helper: set an image prop and mark dirty
     const setImg = (idx, key, val) => {
       if (val === '' || val === undefined) delete imgList[idx][key];
       else imgList[idx][key] = val;
@@ -679,33 +835,9 @@ function renderProperties() {
     container.querySelectorAll('.img-src').forEach(el => {
       el.onchange = () => {
         setImg(+el.dataset.idx, 'src', el.value);
-        // Update the thumbnail preview
         const item = el.closest('.prop-image-item');
         const preview = item?.querySelector('.img-preview img');
         if (preview) preview.src = `/api/images/${encodeURIComponent(el.value)}`;
-      };
-    });
-
-    container.querySelectorAll('.img-mode').forEach(el => {
-      el.onchange = () => {
-        const idx = +el.dataset.idx;
-        const newMode = el.value;
-        const img = imgList[idx];
-        img.mode = newMode;
-        if (newMode === 'inline') {
-          // Switching to inline: remove cells, add default scale
-          delete img.cells;
-          delete img['x-alignment'];
-          delete img['y-alignment'];
-          if (img.scale == null) img.scale = 100;
-        } else {
-          // Switching to grid: remove scale, cells need to be drawn
-          delete img.scale;
-          img.cells = img.cells || [];
-        }
-        markDirty();
-        renderGrid();
-        renderProperties();
       };
     });
 
@@ -725,15 +857,6 @@ function renderProperties() {
       el.onchange = () => setImg(+el.dataset.idx, 'y-alignment', el.value);
     });
 
-    container.querySelectorAll('.img-scale').forEach(el => {
-      el.onchange = () => {
-        const v = Math.max(1, Math.min(100, +el.value || 100));
-        el.value = v;
-        setImg(+el.dataset.idx, 'scale', v);
-      };
-    });
-
-    // Remove buttons
     container.querySelectorAll('.img-remove').forEach(btn => {
       btn.onclick = () => {
         imgList.splice(+btn.dataset.idx, 1);
@@ -742,8 +865,41 @@ function renderProperties() {
         renderProperties();
       };
     });
-
   }
+
+  // ── Wire up "Add Inline" / "Add Grid" buttons for unplaced images ──
+  const ensurePlacement = () => {
+    let p = art.placements.find(p => p.page === S.currentPage);
+    if (!p) {
+      p = { page: S.currentPage, cells: [], images: [] };
+      art.placements.push(p);
+    }
+    if (!p.images) p.images = [];
+    return p;
+  };
+
+  container.querySelectorAll('.img-add-inline').forEach(btn => {
+    btn.onclick = () => {
+      if (!art.images) art.images = [];
+      const entry = { src: btn.dataset.src, scale: 100, border: 1 };
+      if (btn.dataset.caption) entry.caption = btn.dataset.caption;
+      art.images.push(entry);
+      markDirty();
+      renderProperties();
+    };
+  });
+
+  container.querySelectorAll('.img-add-grid').forEach(btn => {
+    btn.onclick = () => {
+      const p = ensurePlacement();
+      const entry = { src: btn.dataset.src, mode: 'grid', cells: [], 'x-alignment': 'center', 'y-alignment': 'center', border: 1 };
+      if (btn.dataset.caption) entry.caption = btn.dataset.caption;
+      p.images.push(entry);
+      markDirty();
+      renderGrid();
+      renderProperties();
+    };
+  });
 }
 
 // =====================================================================
@@ -934,11 +1090,13 @@ document.getElementById('btn-save-events').onclick = async () => {
 // =====================================================================
 
 let buildPollTimer = null;
+let activePreview = null;
 
-async function startBuild(mode) {
+async function startBuild(mode, debug = false) {
   try {
-    await api('/build', { method: 'POST', body: { mode } });
-    toast(`Build started (${mode})`);
+    await api('/build', { method: 'POST', body: { mode, debug } });
+    const label = debug ? `${mode} debug` : mode;
+    toast(`Build started (${label})`);
     pollBuild();
   } catch (err) {
     toast(err.message, 'error');
@@ -954,14 +1112,18 @@ function pollBuild() {
     logEl.textContent = s.log || '(no output yet)';
     logEl.scrollTop = logEl.scrollHeight;
 
+    const label = s.debug ? `${s.mode} debug` : s.mode;
     if (s.running) {
       statusEl.className = 'build-status running';
-      statusEl.textContent = `Building (${s.mode})...`;
+      statusEl.textContent = `Building (${label})...`;
     } else if (s.return_code === 0) {
       statusEl.className = 'build-status success';
-      statusEl.textContent = `Build succeeded (${s.mode})`;
+      statusEl.textContent = `Build succeeded (${label})`;
       clearInterval(buildPollTimer);
-      showPdfPreview(s.mode);
+      // Select the just-built variant in preview
+      let previewMode = s.mode === 'both' ? 'online' : s.mode;
+      if (s.debug) previewMode += '-debug';
+      refreshPreviewTabs(previewMode);
     } else if (s.return_code !== null) {
       statusEl.className = 'build-status error';
       statusEl.textContent = `Build failed (exit ${s.return_code})`;
@@ -974,18 +1136,53 @@ function pollBuild() {
   }, 800);
 }
 
+async function refreshPreviewTabs(selectMode) {
+  const tabsEl = document.getElementById('preview-tabs');
+  const frameEl = document.getElementById('preview-frame');
+  try {
+    const available = await api('/pdfs');
+    if (available.length === 0) {
+      tabsEl.innerHTML = '';
+      frameEl.innerHTML = '';
+      return;
+    }
+    const labels = { 'online': 'Online', 'print': 'Print', 'online-debug': 'Online Debug', 'print-debug': 'Print Debug' };
+    // Default to selectMode if provided, else keep current, else first available
+    const target = selectMode && available.includes(selectMode) ? selectMode
+                 : activePreview && available.includes(activePreview) ? activePreview
+                 : available[0];
+    tabsEl.innerHTML = available.map(m =>
+      `<button class="preview-tab${m === target ? ' active' : ''}" data-mode="${m}">${labels[m] || m}</button>`
+    ).join('');
+    tabsEl.querySelectorAll('.preview-tab').forEach(btn => {
+      btn.onclick = () => showPdfPreview(btn.dataset.mode);
+    });
+    showPdfPreview(target);
+  } catch (e) {
+    // ignore if pdfs endpoint not available
+  }
+}
+
 function showPdfPreview(mode) {
-  const container = document.getElementById('build-preview');
-  if (mode === 'both') mode = 'online';
-  container.innerHTML = `
-    <h3>Preview (${mode})</h3>
-    <iframe src="/api/pdf/${mode}#toolbar=1"></iframe>
-  `;
+  activePreview = mode;
+  const frameEl = document.getElementById('preview-frame');
+  // Cache-bust so browser reloads the PDF after a new build
+  const ts = Date.now();
+  frameEl.innerHTML = `<iframe src="/api/pdf/${mode}?t=${ts}#toolbar=1"></iframe>`;
+  // Update active tab styling
+  document.querySelectorAll('.preview-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
 }
 
 document.getElementById('btn-build-online').onclick = () => startBuild('online');
 document.getElementById('btn-build-print').onclick = () => startBuild('print');
 document.getElementById('btn-build-both').onclick = () => startBuild('both');
+document.getElementById('btn-build-online-debug').onclick = () => startBuild('online', true);
+document.getElementById('btn-build-print-debug').onclick = () => startBuild('print', true);
+
+// Load preview tabs on build tab activation
+refreshPreviewTabs();
 
 // =====================================================================
 //  TABS
@@ -1116,14 +1313,85 @@ document.querySelectorAll('.tool-btn').forEach(btn => {
 function populateImageSelect() {
   const sel = document.getElementById('image-file-select');
   sel.innerHTML = '<option value="">-- select --</option>';
-  for (const img of S.images) {
-    const opt = document.createElement('option');
-    opt.value = img;
-    opt.textContent = img;
-    sel.appendChild(opt);
+
+  // Only show images that belong to the currently selected article
+  const articleMeta = S.selectedSlug
+    ? S.articles.find(a => a.slug === S.selectedSlug)
+    : null;
+  const mdImages = (articleMeta && articleMeta.images) || [];
+
+  if (S.selectedSlug && mdImages.length === 0) {
+    sel.innerHTML = '<option value="">No images in this article</option>';
+  } else if (!S.selectedSlug) {
+    sel.innerHTML = '<option value="">Select an article first</option>';
+  } else {
+    for (const img of mdImages) {
+      const opt = document.createElement('option');
+      opt.value = img.src;
+      opt.textContent = img.src;
+      sel.appendChild(opt);
+    }
   }
+
+  // Clear stale selection if it's no longer in the list
+  if (S.selectedImageFile && !mdImages.some(i => i.src === S.selectedImageFile)) {
+    S.selectedImageFile = null;
+  }
+
   sel.onchange = () => { S.selectedImageFile = sel.value; };
 }
+
+// ─── Layout mode switcher ────────────────────────────────────────────
+function renderModeSelector() {
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === S.layoutMode);
+  });
+}
+
+async function switchLayoutMode(mode) {
+  if (mode === S.layoutMode) return;
+  if (S.dirty && !confirm('You have unsaved changes. Switch mode and discard them?')) return;
+  S.layoutMode = mode;
+  S.dirty = false;
+  document.getElementById('save-indicator').classList.add('hidden');
+  S.layout = await api(`/layout?mode=${S.layoutMode}`);
+  if (!S.layout || typeof S.layout !== 'object') {
+    S.layout = { grid: { rows: 12, columns: 6, gutter: '8pt', text_gutter: '8pt' }, articles: [] };
+  }
+  if (!Array.isArray(S.layout.articles)) S.layout.articles = [];
+  for (const art of S.layout.articles) {
+    if (!Array.isArray(art.placements)) art.placements = [];
+    for (const pl of art.placements) {
+      if (!Array.isArray(pl.cells)) pl.cells = [];
+      if (!Array.isArray(pl.images)) pl.images = [];
+    }
+  }
+  computePages();
+  renderModeSelector();
+  renderGridSettings();
+  renderPageSelector();
+  renderArticlePalette();
+  renderGrid();
+  renderProperties();
+  populateImageSelect();
+}
+
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.onclick = () => switchLayoutMode(btn.dataset.mode);
+});
+
+document.getElementById('btn-copy-layout').onclick = async () => {
+  const otherMode = S.layoutMode === 'online' ? 'print' : 'online';
+  if (!confirm(`Copy the current ${S.layoutMode} layout to ${otherMode}? This will overwrite the ${otherMode} layout.`)) return;
+  // Save current layout first if dirty
+  if (S.dirty) {
+    await api(`/layout?mode=${S.layoutMode}`, { method: 'PUT', body: S.layout });
+    S.dirty = false;
+    document.getElementById('save-indicator').classList.add('hidden');
+  }
+  await api('/layout/copy', { method: 'POST', body: { from: S.layoutMode, to: otherMode } });
+  toast(`Layout copied to ${otherMode}`);
+};
 
 // ─── Save layout ─────────────────────────────────────────────────────
 document.getElementById('btn-save-layout').onclick = async () => {
@@ -1139,7 +1407,7 @@ document.getElementById('btn-save-layout').onclick = async () => {
     }
   }
   try {
-    await api('/layout', { method: 'PUT', body: S.layout });
+    await api(`/layout?mode=${S.layoutMode}`, { method: 'PUT', body: S.layout });
     S.dirty = false;
     document.getElementById('save-indicator').classList.add('hidden');
     toast('Layout saved');
@@ -1165,6 +1433,7 @@ function escHtml(s) {
 
 async function init() {
   await loadAll();
+  renderModeSelector();
   renderGridSettings();
   renderPageSelector();
   renderArticlePalette();

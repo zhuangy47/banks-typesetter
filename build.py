@@ -96,14 +96,17 @@ def _convert_line(line: str, mode: str, slug: str, placed_images: set[str],
         border_pt = image_borders.get(basename, 1)
         border_str = f"{border_pt}pt"
         if border_pt > 0:
+            # Pad the outer container so the border stroke (centered on the
+            # box edge) is not clipped at column boundaries.
+            pad = f"{border_pt}pt"
             if alt:
                 return (
-                    f'#align(center, box(stroke: {border_str}, image("{img_path}", width: {width_str})))\n'
+                    f'#align(center, pad({pad}, box(stroke: {border_str}, image("{img_path}", width: {width_str}))))\n'
                     f'#v(2pt)\n'
                     f'#align(center, text(size: 7pt, style: "italic")[{alt}])'
                 )
             else:
-                return f'#align(center, box(stroke: {border_str}, image("{img_path}", width: {width_str})))'
+                return f'#align(center, pad({pad}, box(stroke: {border_str}, image("{img_path}", width: {width_str}))))'
         else:
             if alt:
                 return (
@@ -143,6 +146,15 @@ def _convert_line(line: str, mode: str, slug: str, placed_images: set[str],
     # --- br tags ---
     line = re.sub(r'<br\s*/?>', '#v(0.5em)', line)
 
+    # --- markdown comment markers ---
+    # <!-- break --> → vertical space equal to one line height
+    line = re.sub(r'<!--\s*break\s*-->', '#v(1em)', line)
+    # <!-- vspace 1.5em --> → configurable vertical space (default 1em)
+    line = re.sub(r'<!--\s*vspace\s+([\d.]+\s*\w+)\s*-->', r'#v(\1)', line)
+    line = re.sub(r'<!--\s*vspace\s*-->', '#v(1em)', line)
+    # <!-- colbreak --> → force column break
+    line = re.sub(r'<!--\s*colbreak\s*-->', '#colbreak()', line)
+
     # --- inline conversions ---
     line = _convert_inline(line, mode, qr_map)
 
@@ -172,13 +184,12 @@ def _convert_inline(text: str, mode: str, qr_map: dict[str, str] | None = None) 
         if mode == "online":
             return f'#link("{url}")[{link_text}]'
         else:
-            # Print mode: show text + QR code image + URL in small text
+            # Print mode: show link text, then QR code block below with URL caption
             qr_path = qr_map.get(url, "")
             if qr_path:
                 return (
-                    f'{link_text} '
-                    f'#box(image("/build/{qr_path}", height: 1.8em), baseline: -0.4em) '
-                    f'#text(size: 5pt)[{url}]'
+                    f'{link_text}\n'
+                    f'#align(center)[#box(image("/build/{qr_path}", height: 5em)) \\ #text(size: 5pt)[{url}]]'
                 )
             else:
                 return f'{link_text} #text(size: 5pt)[({url})]'
@@ -222,13 +233,40 @@ def validate_layout(layout: dict, article_files: set[str]) -> list[str]:
         if slug not in article_files:
             errors.append(f"Layout references article '{slug}' but no .md file found")
 
+        # Validate article-level inline images
+        for img in article.get("images", []):
+            img_src = img.get("src", "")
+            img_file = IMAGES_DIR / os.path.basename(img_src)
+            if not img_file.exists():
+                errors.append(
+                    f"Article '{slug}' inline image '{img_src}': "
+                    f"file not found at {img_file}"
+                )
+            border = img.get("border", 1)
+            if not isinstance(border, (int, float)) or border < 0:
+                errors.append(
+                    f"Article '{slug}' inline image '{img_src}': "
+                    f"border must be a non-negative number (got {border!r})"
+                )
+            scale = img.get("scale", 100)
+            if not (1 <= scale <= 100):
+                errors.append(
+                    f"Article '{slug}' inline image '{img_src}': "
+                    f"scale {scale} must be between 1 and 100"
+                )
+            if "cells" in img:
+                errors.append(
+                    f"Article '{slug}' inline image '{img_src}': "
+                    f"inline images must not have 'cells'"
+                )
+
         col_width = article.get("column_width", 1)
 
         for placement in article["placements"]:
             page = placement["page"]
             article_cell_set: set[tuple[int, int]] = set()
 
-            for cell_spec in placement["cells"]:
+            for cell_spec in placement.get("cells") or []:
                 cells = _expand_cells(cell_spec)
                 for c, r in cells:
                     if c < 0 or c >= max_cols or r < 0 or r >= max_rows:
@@ -263,7 +301,7 @@ def validate_layout(layout: dict, article_files: set[str]) -> list[str]:
 
                 img_mode = img.get("mode", "grid")
 
-                # Validate border property (applies to both modes)
+                # Validate border property
                 border = img.get("border", 1)
                 if not isinstance(border, (int, float)) or border < 0:
                     errors.append(
@@ -271,21 +309,7 @@ def validate_layout(layout: dict, article_files: set[str]) -> list[str]:
                         f"border must be a non-negative number (got {border!r})"
                     )
 
-                if img_mode == "inline":
-                    # Inline images: validate scale if present
-                    scale = img.get("scale", 100)
-                    if not (1 <= scale <= 100):
-                        errors.append(
-                            f"Article '{slug}' image '{img['src']}': "
-                            f"scale {scale} must be between 1 and 100"
-                        )
-                    if "cells" in img:
-                        errors.append(
-                            f"Article '{slug}' image '{img['src']}': "
-                            f"inline images must not have 'cells'"
-                        )
-
-                elif img_mode == "grid":
+                if img_mode == "grid":
                     # Validate alignment properties
                     valid_alignments = {"left", "center", "right"}
                     for axis in ("x-alignment", "y-alignment"):
@@ -330,7 +354,9 @@ def validate_layout(layout: dict, article_files: set[str]) -> list[str]:
                 else:
                     errors.append(
                         f"Article '{slug}' image '{img['src']}': "
-                        f"unknown mode '{img_mode}' (expected 'grid' or 'inline')"
+                        f"placement images must be mode 'grid', "
+                        f"got '{img_mode}' (inline images belong "
+                        f"at the article level)"
                     )
 
             # Claim the article's text cells (minus its own images)
@@ -711,6 +737,31 @@ def split_into_weighted_parts(typ_content: str, weights: list[int]) -> list[str]
     return parts
 
 
+def _placement_text_area(placement: dict) -> int:
+    """Estimate text area for a placement in grid-cell units.
+
+    Sums the cell area of all article cell ranges, then subtracts
+    the area of any grid-mode images (inline images don't consume
+    grid cells from the text area).
+    """
+    area = 0
+    for (r1, c1), (r2, c2) in placement.get("cells", []):
+        area += (r2 - r1 + 1) * (c2 - c1 + 1)
+    for img in placement.get("images", []):
+        if img.get("mode", "grid") == "grid":
+            for (r1, c1), (r2, c2) in img.get("cells", []):
+                area -= (r2 - r1 + 1) * (c2 - c1 + 1)
+    return max(area, 1)
+
+
+def _get_placement_weights(layout: dict, slug: str) -> list[int]:
+    """Return area-based weights for each placement of a multi-page article."""
+    for article in layout["articles"]:
+        if article["slug"] == slug:
+            return [_placement_text_area(p) for p in article["placements"]]
+    return [1]
+
+
 def _get_first_placement(layout: dict, slug: str) -> dict | None:
     """Return the first placement dict for the given article slug."""
     for article in layout["articles"]:
@@ -725,10 +776,8 @@ def get_inline_image_scales(layout: dict, slug: str) -> dict[str, int]:
     scales: dict[str, int] = {}
     for article in layout["articles"]:
         if article["slug"] == slug:
-            for placement in article["placements"]:
-                for img in placement.get("images", []):
-                    if img.get("mode", "grid") == "inline":
-                        scales[os.path.basename(img["src"])] = img.get("scale", 100)
+            for img in article.get("images", []):
+                scales[os.path.basename(img["src"])] = img.get("scale", 100)
     return scales
 
 
@@ -737,10 +786,8 @@ def get_inline_image_borders(layout: dict, slug: str) -> dict[str, float]:
     borders: dict[str, float] = {}
     for article in layout["articles"]:
         if article["slug"] == slug:
-            for placement in article["placements"]:
-                for img in placement.get("images", []):
-                    if img.get("mode", "grid") == "inline":
-                        borders[os.path.basename(img["src"])] = img.get("border", 1)
+            for img in article.get("images", []):
+                borders[os.path.basename(img["src"])] = img.get("border", 1)
     return borders
 
 
@@ -831,6 +878,10 @@ def main():
         "--strict", action="store_true",
         help="Treat content overflow warnings as errors (exit non-zero)"
     )
+    parser.add_argument(
+        "--debug", action="store_true",
+        help="Enable debug mode (show grid lines and bounding boxes)"
+    )
     args = parser.parse_args()
 
     # Set up overflow warning logger (writes to stderr)
@@ -848,8 +899,6 @@ def main():
         config = yaml.safe_load(f)
     with open(ROOT / "events.yaml") as f:
         events_data = yaml.safe_load(f)
-    with open(ROOT / "layout.yaml") as f:
-        layout = yaml.safe_load(f)
 
     # Load horoscope if present
     horoscope_path = ROOT / "horoscope.yaml"
@@ -857,32 +906,6 @@ def main():
     if horoscope_path.exists():
         with open(horoscope_path) as f:
             horoscope = yaml.safe_load(f)
-
-    # 2. Validate layout
-    print("Validating layout...")
-    article_files = {f.stem for f in ARTICLES_DIR.glob("*.md")}
-    layout_errors = validate_layout(layout, article_files)
-    if layout_errors:
-        for err in layout_errors:
-            print(f"  ERROR: {err}")
-        sys.exit(1)
-    print("  Layout valid.")
-
-    # 2a. Compute text columns for non-rectangular placements
-    for article in layout["articles"]:
-        col_width = article.get("column_width", 1)
-        for placement in article["placements"]:
-            text_cols = compute_text_columns(placement["cells"], col_width)
-            # Non-rectangular if columns have different row ranges
-            if len(text_cols) > 1 and not all(
-                tc["row_start"] == text_cols[0]["row_start"]
-                and tc["row_end"] == text_cols[0]["row_end"]
-                for tc in text_cols[1:]
-            ):
-                placement["text_columns"] = text_cols
-
-    # 2b. Check content overflow (warning only, does not block build)
-    # Deferred until after articles are loaded — see below.
 
     # 3. Fetch API data
     try:
@@ -906,11 +929,47 @@ def main():
     print("Loading letter from the chair...")
     lftc = load_article(ROOT / "lftc.md")
 
-    # 6. Build TOC
-    toc = build_toc(layout, articles)
+    article_files = {f.stem for f in ARTICLES_DIR.glob("*.md")}
 
     post_overflow_total = 0
     for mode in modes:
+        # Load mode-specific layout, falling back to layout.yaml
+        layout_path = ROOT / f"layout-{mode}.yaml"
+        if not layout_path.exists():
+            layout_path = ROOT / "layout.yaml"
+        print(f"Loading layout from {layout_path.name}...")
+        with open(layout_path) as f:
+            layout = yaml.safe_load(f)
+
+        # Sort each article's placements by page number
+        for article in layout["articles"]:
+            article["placements"].sort(key=lambda p: p["page"])
+
+        # Validate layout
+        print("Validating layout...")
+        layout_errors = validate_layout(layout, article_files)
+        if layout_errors:
+            for err in layout_errors:
+                print(f"  ERROR: {err}")
+            sys.exit(1)
+        print("  Layout valid.")
+
+        # Compute text columns for non-rectangular placements
+        for article in layout["articles"]:
+            col_width = article.get("column_width", 1)
+            for placement in article["placements"]:
+                if not placement.get("cells"):
+                    continue
+                text_cols = compute_text_columns(placement["cells"], col_width)
+                if len(text_cols) > 1 and not all(
+                    tc["row_start"] == text_cols[0]["row_start"]
+                    and tc["row_end"] == text_cols[0]["row_end"]
+                    for tc in text_cols[1:]
+                ):
+                    placement["text_columns"] = text_cols
+
+        # Build TOC from this mode's layout
+        toc = build_toc(layout, articles)
         print(f"\n{'=' * 40}")
         print(f"Building {mode} mode...")
         print(f"{'=' * 40}")
@@ -942,15 +1001,7 @@ def main():
             img_borders = get_inline_image_borders(layout, slug)
             typ_content = md_to_typst(article["body"], mode, slug, placed, qr_map, img_widths, img_borders)
 
-            # Check if article spans multiple pages
-            num_pages = count_article_pages(layout, slug)
-            if num_pages > 1:
-                # Split content at paragraph boundaries into parts
-                parts = split_into_parts(typ_content, num_pages)
-                for i, part in enumerate(parts):
-                    (build_articles / f"{slug}-part{i}.typ").write_text(part)
-            else:
-                (build_articles / f"{slug}.typ").write_text(typ_content)
+            (build_articles / f"{slug}.typ").write_text(typ_content)
 
         # 9. Convert LFTC
         lftc_typ = md_to_typst(lftc["body"], mode, "lftc", qr_map=qr_map)
@@ -997,13 +1048,16 @@ def main():
 
         # 11. Compile with Typst
         print("Compiling with Typst...")
-        output_file = BUILD / "output" / f"banks-{mode}.pdf"
+        suffix = f"{mode}-debug" if args.debug else mode
+        output_file = BUILD / "output" / f"banks-{suffix}.pdf"
+        debug_str = "true" if args.debug else "false"
         cmd = [
             "typst", "compile",
             str(ROOT / "typst" / "main.typ"),
             str(output_file),
             "--root", str(ROOT),
             "--input", f"mode={mode}",
+            "--input", f"debug={debug_str}",
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:

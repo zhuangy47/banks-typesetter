@@ -250,6 +250,7 @@
   // Account for border stroke extending outside the box (centered on edge)
   let boff = if border > 0 { border * 1pt } else { 0pt }
   let bot-pad = 2pt
+  let half-b = boff / 2
   if caption != none {
     let cap-reserve = small-size * 3 + 4pt
     let img-max-h = rect.height - cap-reserve - boff
@@ -274,14 +275,14 @@
           }
           let cap-h = measure(text(size: small-size, style: "italic")[#caption]).height + 2pt + descender-pad
           let total-h = img-h + cap-h
-          // Vertical offset for alignment
-          let off-y = if y-alignment == "center" { calc.max((rect.height - total-h) / 2, 0pt) }
-            else if y-alignment == "right" { calc.max(rect.height - total-h, 0pt) }
-            else { 0pt }
+          // Vertical offset for alignment (offset by half border to prevent clipping)
+          let off-y = if y-alignment == "center" { calc.max((rect.height - total-h) / 2, half-b) }
+            else if y-alignment == "right" { calc.max(rect.height - total-h - half-b, half-b) }
+            else { half-b }
           // Horizontal offset for alignment
-          let off-x = if x-alignment == "center" { (rect.width - img-w) / 2 }
-            else if x-alignment == "right" { rect.width - img-w }
-            else { 0pt }
+          let off-x = if x-alignment == "center" { calc.max((rect.width - img-w) / 2, half-b) }
+            else if x-alignment == "right" { calc.max(rect.width - img-w - half-b, half-b) }
+            else { half-b }
           if off-y > 0pt { v(off-y) }
           move(dx: off-x, box(width: img-w, inset: (bottom: descender-pad), {
             box(stroke: img-stroke, image(img-path, width: img-w, height: img-h))
@@ -311,14 +312,14 @@
             img-w = img-w * scale
             img-h = avail-h
           }
-          // Vertical offset for alignment
-          let off-y = if y-alignment == "center" { calc.max((rect.height - img-h) / 2, 0pt) }
-            else if y-alignment == "right" { calc.max(rect.height - img-h, 0pt) }
-            else { 0pt }
+          // Vertical offset for alignment (offset by half border to prevent clipping)
+          let off-y = if y-alignment == "center" { calc.max((rect.height - img-h) / 2, half-b) }
+            else if y-alignment == "right" { calc.max(rect.height - img-h - half-b, half-b) }
+            else { half-b }
           // Horizontal offset for alignment
-          let off-x = if x-alignment == "center" { (rect.width - img-w) / 2 }
-            else if x-alignment == "right" { rect.width - img-w }
-            else { 0pt }
+          let off-x = if x-alignment == "center" { calc.max((rect.width - img-w) / 2, half-b) }
+            else if x-alignment == "right" { calc.max(rect.width - img-w - half-b, half-b) }
+            else { half-b }
           if off-y > 0pt { v(off-y) }
           move(dx: off-x, box(stroke: img-stroke, image(img-path, width: img-w, height: img-h)))
         },
@@ -332,11 +333,13 @@
 // Atoms are either word-content pieces or paragraph-break markers.
 
 #let pg-break = "¶PARBREAK¶"
+#let col-break-marker = "¶COLBREAK¶"
 #let is-pg-break(atom) = atom == pg-break
+#let is-col-break(atom) = atom == col-break-marker
 #let is-enum-start(a) = type(a) == str and a.starts-with("¶ENUM:")
 #let is-list-start(a) = a == "¶LIST¶"
 #let is-item-end(a) = a == "¶/ENUM¶" or a == "¶/LIST¶"
-#let is-marker(a) = is-pg-break(a) or is-enum-start(a) or is-list-start(a) or is-item-end(a)
+#let is-marker(a) = is-pg-break(a) or is-col-break(a) or is-enum-start(a) or is-list-start(a) or is-item-end(a)
 // ¶ is 2 bytes in UTF-8, so "¶ENUM:" = 7 bytes, trailing "¶" = 2 bytes
 #let enum-number(a) = int(a.slice(7, -2))
 
@@ -355,6 +358,7 @@
     return result
   }
   if c.func() == parbreak { return (pg-break,) }
+  if c.func() == colbreak { return (col-break-marker,) }
   if c.func() == linebreak { return ("space",) }
   if c.func() == strong    { return tokenize(c.body, wrappers + (strong,)) }
   if c.func() == emph      { return tokenize(c.body, wrappers + (emph,)) }
@@ -455,7 +459,15 @@
   let cur-num = 0
   let cur-words = ()
   for a in atom-slice {
-    if is-pg-break(a) or is-enum-start(a) or is-list-start(a) or is-item-end(a) {
+    if is-col-break(a) {
+      if cur-words.len() > 0 {
+        segments.push((kind: cur-type, num: cur-num, words: cur-words))
+        cur-words = ()
+      }
+      segments.push((kind: "colbreak", num: 0, words: ()))
+      cur-type = "text"
+      cur-num = 0
+    } else if is-pg-break(a) or is-enum-start(a) or is-list-start(a) or is-item-end(a) {
       if cur-words.len() > 0 {
         segments.push((kind: cur-type, num: cur-num, words: cur-words))
         cur-words = ()
@@ -480,16 +492,20 @@
   // Render each segment with proper formatting
   let parts = ()
   for seg in segments {
-    let joined = seg.words.join([ ])
-    if seg.kind == "enum" {
-      parts.push(enum(start: seg.num, enum.item(joined)))
-    } else if seg.kind == "list" {
-      parts.push(list(list.item(joined)))
-    } else if seg.kind == "enum-cont" or seg.kind == "list-cont" {
-      // Continuation of item from previous column — match body indent
-      parts.push(pad(left: 1.5em, joined))
+    if seg.kind == "colbreak" {
+      parts.push(colbreak())
     } else {
-      parts.push(joined)
+      let joined = seg.words.join([ ])
+      if seg.kind == "enum" {
+        parts.push(enum(start: seg.num, enum.item(joined)))
+      } else if seg.kind == "list" {
+        parts.push(list(list.item(joined)))
+      } else if seg.kind == "enum-cont" or seg.kind == "list-cont" {
+        // Continuation of item from previous column — match body indent
+        parts.push(pad(left: 1.5em, joined))
+      } else {
+        parts.push(joined)
+      }
     }
   }
   parts.join(parbreak())
@@ -506,6 +522,8 @@
 // slug: article slug (for overflow reporting)
 // header-content: content for full-width header (none if not used)
 // body-content: the article body content (columns are applied to this)
+// footer-content: content placed at the bottom of the text area (e.g. "Continued on page N")
+//                 — rendered outside the clippable body so it stays visible on overflow
 // col-gap: gap between text columns
 // col-separator: whether to draw vertical rules between columns
 // show-border: whether to draw an outline around the article bounding box
@@ -516,11 +534,18 @@
   slug,
   header-content,
   body-content,
+  footer-content: none,
+  full-width-footer: false,
   col-gap: none,
   col-separator: false,
   show-border: false,
   images: (),
   grid: default-grid,
+  // Multi-page atom-based splitting: pass raw-body (unstyled) to enable
+  raw-body: none,
+  page-index: 0,
+  is-last-page: true,
+  debug: false,
 ) = {
   let col-gap = if col-gap == none { grid.text-gutter } else { col-gap }
   // Use the article's own cells (not bounding box) to determine text region.
@@ -589,29 +614,6 @@
     text-h = text-h - 2 * border-pad
   }
 
-  // Build body content (columns only, header placed separately)
-  let body-final = {
-    let col-body = columns(num-columns, gutter: col-gap, body-content)
-    if col-separator and num-columns > 1 {
-      col-body
-      let col-w = (text-w - (num-columns - 1) * col-gap) / num-columns
-      for i in range(1, num-columns) {
-        let sep-x = i * (col-w + col-gap) - col-gap / 2
-        place(
-          top + left,
-          dx: sep-x,
-          block(
-            width: 0pt,
-            height: 100%,
-            place(line(start: (0pt, 0pt), end: (0pt, 100%), stroke: 0.25pt + rule-color))
-          )
-        )
-      }
-    } else {
-      col-body
-    }
-  }
-
   let top-pad = 2pt
   let bot-pad = 4pt
 
@@ -655,9 +657,17 @@
       )
     }
 
+    // ── Measure footer (if any) so we can reserve space ────────
+    let footer-h = if footer-content != none {
+      measure(block(width: text-w, spacing: 0pt, footer-content)).height
+    } else { 0pt }
+
     // ── Adjusted text area (below header, with bottom padding) ─
     let adj-y = if header-content != none { text-y + header-h } else { text-y }
     let adj-h = if header-content != none { text-h - header-h - bot-pad } else { text-h - bot-pad }
+
+    // Reserve space for footer within the adjusted height
+    let body-h = adj-h - footer-h
 
     // ── Place images (offset below header if conflicting) ─────
     let hdr-bottom = text-y + header-h
@@ -679,16 +689,133 @@
       place-image-at-cells(img.cells, img.path, caption: img.caption, dy-offset: dy-off, x-alignment: img.at("x-alignment", default: "center"), y-alignment: img.at("y-alignment", default: "center"), inset: img-inset, border: img.at("border", default: 1), grid: grid)
     }
 
-    // ── Overflow detection ────────────────────────────────────
-    // Measure body at single-column width and divide by column count,
-    // since measure() on columns() doesn't simulate column balancing.
+    // ── Multi-page atom-based content splitting ───────────────
+    // When raw-body is provided, decompose the full article into atoms
+    // and use measurement-based binary search to split precisely at
+    // what fits on this page, coordinating via metadata queries.
     let single-col-w = if num-columns > 1 {
       (text-w - (num-columns - 1) * col-gap) / num-columns
     } else { text-w }
-    let single-col-h = measure(block(width: single-col-w, spacing: 0pt, body-content)).height
-    let body-overflows = single-col-h / num-columns > adj-h
+
+    // Track overflow info for debug visualization
+    let atom-overflow-h = 0pt
+
+    let effective-body = if raw-body != none {
+      let atoms = content-to-atoms(raw-body)
+      let total = atoms.len()
+      let available-h = body-h * num-columns
+
+      // Measure height accounting for colbreak markers.
+      // Each colbreak rounds up to the next full column of body-h.
+      let measure-with-colbreaks(atom-slice, col-w, col-h, n-cols) = {
+        // Split atom-slice at colbreak markers
+        let segments = ((),)
+        for a in atom-slice {
+          if is-col-break(a) {
+            segments.push(())
+          } else {
+            segments.last().push(a)
+          }
+        }
+        // Measure each segment and sum, rounding each (except last) up to col-h
+        let total-h = 0pt
+        for (i, seg) in segments.enumerate() {
+          let seg-h = if seg.len() > 0 {
+            measure(block(width: col-w, spacing: 0pt, build-content(seg))).height
+          } else { 0pt }
+          if i < segments.len() - 1 {
+            // Round up to full column height (colbreak wastes remaining space)
+            total-h += calc.max(seg-h, col-h)
+          } else {
+            total-h += seg-h
+          }
+        }
+        total-h
+      }
+
+      // Sum consumed atom counts from prior pages
+      let prior = query(<article-consumed>)
+      let offset = 0
+      for pi in range(page-index) {
+        let matches = prior.filter(m => m.value.slug == slug and m.value.page-index == pi)
+        if matches.len() > 0 {
+          offset += matches.first().value.consumed
+        }
+      }
+      // Skip leading parbreaks at page boundary
+      while offset < total and is-pg-break(atoms.at(offset)) { offset += 1 }
+
+      let remaining = total - offset
+      if remaining <= 0 {
+        // No content left for this page
+        []
+      } else {
+        // Binary search for the maximum atom count that fits
+        let bsearch(lo, hi) = {
+          if hi - lo <= 1 { lo }
+          else {
+            let mid = int((lo + hi) / 2)
+            let mh = measure-with-colbreaks(atoms.slice(offset, offset + mid), single-col-w, body-h, num-columns)
+            if mh <= available-h { bsearch(mid, hi) }
+            else                 { bsearch(lo, mid) }
+          }
+        }
+
+        // Check if all remaining content fits on this page
+        let all-h = measure-with-colbreaks(atoms.slice(offset), single-col-w, body-h, num-columns)
+        let count = if all-h <= available-h {
+          remaining
+        } else {
+          let c = bsearch(0, remaining + 1)
+          // Trim trailing parbreaks
+          let end = offset + c
+          while end > offset and is-pg-break(atoms.at(end - 1)) { end -= 1 }
+          end - offset
+        }
+
+        // Emit overflow if atoms were dropped on the last page
+        if is-last-page and count < remaining {
+          [#metadata((slug: slug, allocated: repr(body-h), needed: repr(all-h / num-columns))) <overflow>]
+          atom-overflow-h = all-h / num-columns - body-h
+        }
+
+        // Emit consumed count so subsequent pages can compute their offset
+        [#metadata((slug: slug, page-index: page-index, consumed: count)) <article-consumed>]
+
+        build-content(atoms.slice(offset, offset + count))
+      }
+    } else {
+      body-content
+    }
+
+    // ── Build body-final (columns + optional separators) ──────
+    let body-final = {
+      let col-body = columns(num-columns, gutter: col-gap, effective-body)
+      if col-separator and num-columns > 1 {
+        col-body
+        let col-w = (text-w - (num-columns - 1) * col-gap) / num-columns
+        for i in range(1, num-columns) {
+          let sep-x = i * (col-w + col-gap) - col-gap / 2
+          place(
+            top + left,
+            dx: sep-x,
+            block(
+              width: 0pt,
+              height: 100%,
+              place(line(start: (0pt, 0pt), end: (0pt, 100%), stroke: 0.25pt + rule-color))
+            )
+          )
+        }
+      } else {
+        col-body
+      }
+    }
+
+    // ── Overflow detection ────────────────────────────────────
+    let single-col-h = measure(block(width: single-col-w, spacing: 0pt, effective-body)).height
+    let body-overflows = single-col-h / num-columns > body-h
     if body-overflows {
-      [#metadata((slug: slug, allocated: repr(adj-h), needed: repr(single-col-h / num-columns))) <overflow>]
+      [#metadata((slug: slug, allocated: repr(body-h), needed: repr(single-col-h / num-columns))) <overflow>]
     }
 
     // ── Place body content ────────────────────────────────────
@@ -699,12 +826,131 @@
       dy: adj-y - top-pad,
       block(
         width: text-w,
-        height: adj-h + top-pad + bot-pad,
+        height: body-h + top-pad,
         clip: body-overflows,
         inset: (top: top-pad),
         body-final,
       ),
     )
+
+    // ── Place footer below body, always visible ──────────────
+    if footer-content != none {
+      let footer-x = text-x
+      let footer-w = text-w
+
+      if not full-width-footer and num-columns > 1 {
+        // Position footer at the last column that contains text
+        let cols-needed = calc.min(num-columns, calc.max(1, calc.ceil(single-col-h / body-h)))
+        let last-col-idx = cols-needed - 1
+        footer-x = text-x + last-col-idx * (single-col-w + col-gap)
+        footer-w = single-col-w
+      }
+
+      // Avoid overlapping with grid images at the bottom of the article
+      for img in images {
+        let ib = cells-bbox(img.cells)
+        let ir = cell-rect(ib.col-start, ib.row-start, ib.col-end, ib.row-end, grid: grid)
+        let img-left = ir.x
+        let img-right = ir.x + ir.width
+        let footer-right = footer-x + footer-w
+        // Check if image occupies the bottom rows and overlaps horizontally
+        if ib.row-end >= bbox.row-end and img-left < footer-right and img-right > footer-x {
+          if img-left <= footer-x {
+            // Image covers left side — shift footer right
+            footer-x = img-right + grid.gutter
+            footer-w = footer-right - footer-x
+          } else {
+            // Image covers right side — shrink footer
+            footer-w = img-left - grid.gutter - footer-x
+          }
+        }
+      }
+
+      if footer-w > 0pt {
+        place(
+          top + left,
+          dx: footer-x,
+          dy: adj-y + body-h,
+          block(
+            width: footer-w,
+            footer-content,
+          ),
+        )
+      }
+    }
+
+    // ── Debug overlays (non-layout-affecting) ─────────────────
+    if debug {
+      let dbg-stroke(c) = 0.75pt + c
+
+      // Header area — orange
+      if header-content != none {
+        place(top + left, dx: hdr-x, dy: text-y,
+          block(width: hdr-w, height: header-h, stroke: dbg-stroke(rgb("#ff880080"))))
+        place(top + left, dx: hdr-x + 2pt, dy: text-y + header-h - 8pt,
+          text(size: 4pt, fill: rgb("#ff8800"))[header])
+      }
+
+      // Body area — magenta
+      place(top + left, dx: text-x, dy: adj-y,
+        block(width: text-w, height: body-h, stroke: dbg-stroke(rgb("#cc00cc80"))))
+      place(top + left, dx: text-x + text-w - 18pt, dy: adj-y + 2pt,
+        text(size: 4pt, fill: rgb("#cc00cc"))[body])
+
+      // Individual text columns — cyan dashed
+      if num-columns > 1 {
+        for i in range(num-columns) {
+          let col-x = text-x + i * (single-col-w + col-gap)
+          place(top + left, dx: col-x, dy: adj-y,
+            block(width: single-col-w, height: body-h, stroke: (paint: rgb("#00cccc80"), thickness: 0.5pt, dash: "dashed")))
+          place(top + left, dx: col-x + 2pt, dy: adj-y + body-h - 8pt,
+            text(size: 3.5pt, fill: rgb("#00cccc"))[col #(i+1)])
+        }
+      }
+
+      // Footer area — brown
+      if footer-content != none and footer-h > 0pt {
+        place(top + left, dx: text-x, dy: adj-y + body-h,
+          block(width: text-w, height: footer-h, stroke: dbg-stroke(rgb("#88440080"))))
+      }
+
+      // Image areas — green
+      for img in images {
+        let b = cells-bbox(img.cells)
+        let r = cell-rect(b.col-start, b.row-start, b.col-end, b.row-end, grid: grid)
+        place(top + left, dx: r.x, dy: r.y,
+          block(width: r.width, height: r.height, stroke: dbg-stroke(rgb("#00aa0080"))))
+      }
+
+      // Overflow visualization — red band at the last column that overflows
+      let overflow-amt = if body-overflows {
+        single-col-h / num-columns - body-h
+      } else if atom-overflow-h > 0pt {
+        atom-overflow-h
+      } else { 0pt }
+
+      if overflow-amt > 0pt {
+        let bar-h = calc.min(overflow-amt, 30pt)
+        // Determine the last column's x position and width
+        let cols-used = calc.min(num-columns, calc.max(1, calc.ceil(single-col-h / body-h)))
+        let last-col-idx = cols-used - 1
+        let last-col-x = text-x + last-col-idx * (single-col-w + col-gap)
+        // Red band below the last column
+        place(top + left, dx: last-col-x, dy: adj-y + body-h,
+          block(width: single-col-w, height: bar-h,
+            fill: rgb("#ff000020"),
+            stroke: 1pt + rgb("#ff0000aa"),
+          )
+        )
+        // Overflow label
+        let overflow-pt = calc.round(overflow-amt / 1pt * 100) / 100
+        place(top + left, dx: last-col-x + 2pt, dy: adj-y + body-h + 2pt,
+          block(fill: rgb("#ff0000dd"), inset: 2pt, radius: 2pt,
+            text(size: 5pt, fill: white, weight: "bold")[OVERFLOW: #(overflow-pt)pt]
+          )
+        )
+      }
+    }
   }
 }
 
@@ -724,11 +970,13 @@
   body-content,
   footer-content: none,
   full-width-header: true,
+  full-width-footer: false,
   col-gap: none,
   col-separator: false,
   show-border: false,
   images: (),
   grid: default-grid,
+  debug: false,
 ) = {
   let col-gap = if col-gap == none { grid.text-gutter } else { col-gap }
   if text-columns.len() == 0 { return }
@@ -892,30 +1140,41 @@
     for i in range(cols.len()) {
       if offset >= total { break }
 
-      // Skip leading parbreak at column boundary
-      if is-pg-break(atoms.at(offset)) { offset += 1 }
+      // Skip leading parbreak or colbreak at column boundary
+      while offset < total and (is-pg-break(atoms.at(offset)) or is-col-break(atoms.at(offset))) { offset += 1 }
       if offset >= total { break }
 
       let w = col-w
       let h = col-heights.at(i)
       let is-last-col = i == cols.len() - 1
 
-      // Reserve space for footer in the last column
+      // Reserve space for footer in the last column (only when not full-width)
       let footer-h = 0pt
-      if is-last-col and footer-content != none {
+      if is-last-col and footer-content != none and not full-width-footer {
         footer-h = measure(block(width: w, spacing: 0pt, footer-content)).height
         h -= footer-h
       }
 
-      let remaining = total - offset
+      // Check for a colbreak marker in remaining atoms
+      let col-break-idx = none
+      for j in range(offset, total) {
+        if is-col-break(atoms.at(j)) {
+          col-break-idx = j
+          break
+        }
+      }
 
-      // Try placing all remaining content
-      let full-content = build-content(atoms.slice(offset, total))
+      // Effective end: atoms available for this column (up to colbreak or total)
+      let effective-end = if col-break-idx != none { col-break-idx } else { total }
+      let remaining = effective-end - offset
+
+      // Try placing all available content for this column
+      let full-content = build-content(atoms.slice(offset, effective-end))
       let full-h = measure(block(width: w, spacing: 0pt, full-content)).height
 
       if full-h <= h {
         // Everything fits in this column — no clip needed
-        let content = if is-last-col and footer-content != none {
+        let content = if is-last-col and footer-content != none and not full-width-footer {
           { full-content; footer-content }
         } else {
           full-content
@@ -932,7 +1191,7 @@
             content,
           ),
         )
-        offset = total
+        offset = effective-end
       } else {
         // Overflow — binary search for the split point
         let count = bsearch(0, remaining + 1, w, h, offset)
@@ -994,6 +1253,75 @@
             ),
           )
         }
+      }
+    }
+
+    // ── Full-width footer (placed below all columns) ────────
+    if full-width-footer and footer-content != none {
+      // Span from leftmost to rightmost column extent
+      let fw-x = col-rects.first().x
+      let fw-right = col-rects.last().x + col-rects.last().width
+      let fw-w = fw-right - fw-x
+      let fw-y = calc.max(..range(cols.len()).map(i => col-ys.at(i) + col-heights.at(i)))
+      place(
+        top + left,
+        dx: fw-x,
+        dy: fw-y,
+        block(
+          width: fw-w,
+          footer-content,
+        ),
+      )
+    }
+
+    // ── Debug overlays (non-layout-affecting) ─────────────────
+    if debug {
+      let dbg-stroke(c) = 0.75pt + c
+
+      // Header area — orange
+      if header-content != none and header-h > 0pt {
+        place(top + left, dx: hdr-x, dy: hdr-y,
+          block(width: hdr-w, height: header-h, stroke: dbg-stroke(rgb("#ff880080"))))
+        place(top + left, dx: hdr-x + 2pt, dy: hdr-y + header-h - 8pt,
+          text(size: 4pt, fill: rgb("#ff8800"))[header])
+      }
+
+      // Each text column — cyan dashed
+      for (i, cr) in col-rects.enumerate() {
+        let cy = col-ys.at(i)
+        let ch = col-heights.at(i)
+        place(top + left, dx: cr.x, dy: cy,
+          block(width: cr.width, height: ch, stroke: (paint: rgb("#cc00cc80"), thickness: 0.5pt, dash: "dashed")))
+        place(top + left, dx: cr.x + 2pt, dy: cy + ch - 8pt,
+          text(size: 3.5pt, fill: rgb("#cc00cc"))[col #(i+1)])
+      }
+
+      // Image areas — green
+      for img in images {
+        let b = cells-bbox(img.cells)
+        let r = cell-rect(b.col-start, b.row-start, b.col-end, b.row-end, grid: grid)
+        place(top + left, dx: r.x, dy: r.y,
+          block(width: r.width, height: r.height, stroke: dbg-stroke(rgb("#00aa0080"))))
+      }
+
+      // Overflow visualization — red block at the last column
+      if offset < total {
+        let overflow-count = atoms.slice(offset).filter(a => not is-pg-break(a)).len()
+        let last-cr = col-rects.last()
+        let last-cy = col-ys.last()
+        let last-ch = col-heights.last()
+        let bar-h = calc.min(20pt, last-ch * 0.3)
+        place(top + left, dx: last-cr.x, dy: last-cy + last-ch,
+          block(width: last-cr.width, height: bar-h,
+            fill: rgb("#ff000020"),
+            stroke: 1pt + rgb("#ff0000aa"),
+          )
+        )
+        place(top + left, dx: last-cr.x + 2pt, dy: last-cy + last-ch + 2pt,
+          block(fill: rgb("#ff0000dd"), inset: 2pt, radius: 2pt,
+            text(size: 5pt, fill: white, weight: "bold")[OVERFLOW: #overflow-count atoms]
+          )
+        )
       }
     }
   }

@@ -3,6 +3,7 @@ Banks of the Boneyard - Layout Editor UI
 Flask server providing a visual grid editor and article management.
 """
 import json
+import re
 import subprocess
 import threading
 from pathlib import Path
@@ -29,17 +30,79 @@ def index():
 
 # ===== Layout API ==========================================================
 
+def _layout_path_for_mode(mode):
+    """Return the layout file path for a given mode (online/print)."""
+    if mode in ("online", "print"):
+        return ROOT / f"layout-{mode}.yaml"
+    return ROOT / "layout.yaml"
+
+
+def _read_layout(path):
+    """Read and normalize a layout file, returning a dict."""
+    empty = {
+        "grid": {"rows": 12, "columns": 6, "gutter": "8pt", "text_gutter": "8pt"},
+        "articles": [],
+    }
+    if not path.exists() or path.stat().st_size == 0:
+        return empty
+    with open(path) as f:
+        data = yaml.safe_load(f)
+    if not data or not isinstance(data, dict):
+        return empty
+    for art in data.get("articles") or []:
+        if not art.get("placements"):
+            art["placements"] = []
+        if art.get("images") is None:
+            art["images"] = []
+        for pl in art["placements"]:
+            if pl.get("cells") is None:
+                pl["cells"] = []
+            if pl.get("images") is None:
+                pl["images"] = []
+    if data.get("articles") is None:
+        data["articles"] = []
+    return data
+
+
 @app.route("/api/layout")
 def get_layout():
-    with open(ROOT / "layout.yaml") as f:
-        return jsonify(yaml.safe_load(f))
+    mode = request.args.get("mode", "")
+    path = _layout_path_for_mode(mode)
+    # Fall back to layout.yaml if mode-specific file doesn't exist
+    if not path.exists() and mode in ("online", "print"):
+        path = ROOT / "layout.yaml"
+    return jsonify(_read_layout(path))
 
 
 @app.route("/api/layout", methods=["PUT"])
 def put_layout():
     data = request.json
+    mode = request.args.get("mode", "")
     text = serialize_layout(data)
-    (ROOT / "layout.yaml").write_text(text)
+    path = _layout_path_for_mode(mode)
+    path.write_text(text)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/layout/copy", methods=["POST"])
+def copy_layout():
+    """Copy layout from one mode to another. Body: {"from": "online", "to": "print"}"""
+    body = request.json
+    src_mode = body.get("from", "")
+    dst_mode = body.get("to", "")
+    if src_mode not in ("online", "print") or dst_mode not in ("online", "print"):
+        return jsonify({"error": "from/to must be 'online' or 'print'"}), 400
+    if src_mode == dst_mode:
+        return jsonify({"error": "from and to must differ"}), 400
+    src_path = _layout_path_for_mode(src_mode)
+    # Fall back to layout.yaml if source doesn't exist
+    if not src_path.exists():
+        src_path = ROOT / "layout.yaml"
+    dst_path = _layout_path_for_mode(dst_mode)
+    if src_path.exists():
+        dst_path.write_text(src_path.read_text())
+    else:
+        return jsonify({"error": f"Source layout ({src_path.name}) not found"}), 404
     return jsonify({"ok": True})
 
 
@@ -81,11 +144,15 @@ def put_events():
 def list_articles():
     articles = []
     for md in sorted((ROOT / "articles").glob("*.md")):
-        fm = _parse_frontmatter(md.read_text())
+        text = md.read_text()
+        fm = _parse_frontmatter(text)
+        body = _extract_body(text)
+        images = _extract_images(body)
         articles.append({
             "slug": md.stem,
             "title": fm.get("title", md.stem),
             "authors": fm.get("authors", []),
+            "images": images,
         })
     return jsonify(articles)
 
@@ -213,15 +280,21 @@ def upload_image():
 @app.route("/api/build", methods=["POST"])
 def start_build():
     mode = request.json.get("mode", "online")
+    debug = request.json.get("debug", False)
     with build_lock:
         if build_state["running"]:
             return jsonify({"error": "Build already running"}), 409
-        build_state.update(running=True, log="", return_code=None, mode=mode)
+        build_state.update(running=True, log="", return_code=None, mode=mode,
+                           debug=debug)
 
     def run():
         try:
+            cmd = [str(ROOT / ".venv" / "bin" / "python"), str(ROOT / "build.py"),
+                   "--mode", mode]
+            if debug:
+                cmd.append("--debug")
             proc = subprocess.Popen(
-                [str(ROOT / ".venv" / "bin" / "python"), str(ROOT / "build.py"), "--mode", mode],
+                cmd,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 cwd=str(ROOT), text=True,
             )
@@ -243,17 +316,29 @@ def build_status():
         "log": build_state["log"],
         "return_code": build_state["return_code"],
         "mode": build_state["mode"],
+        "debug": build_state.get("debug", False),
     })
 
 
 @app.route("/api/pdf/<mode>")
 def get_pdf(mode):
-    if mode not in ("online", "print"):
+    if mode not in ("online", "print", "online-debug", "print-debug"):
         abort(400)
     path = ROOT / "build" / "output" / f"banks-{mode}.pdf"
     if not path.exists():
         abort(404)
     return send_file(path, mimetype="application/pdf")
+
+
+@app.route("/api/pdfs")
+def list_pdfs():
+    """Return which PDF variants exist on disk."""
+    output_dir = ROOT / "build" / "output"
+    available = []
+    for name in ("online", "print", "online-debug", "print-debug"):
+        if (output_dir / f"banks-{name}.pdf").exists():
+            available.append(name)
+    return jsonify(available)
 
 
 # ===== Helpers =============================================================
@@ -272,6 +357,13 @@ def _extract_body(text):
         if len(parts) >= 3:
             return parts[2].strip()
     return text
+
+
+_IMG_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+
+def _extract_images(body):
+    """Return list of {src, caption} for images found in markdown body."""
+    return [{"src": m.group(2), "caption": m.group(1)} for m in _IMG_RE.finditer(body)]
 
 
 def serialize_layout(data):
@@ -294,29 +386,51 @@ def serialize_layout(data):
             lines.append(f"    column_width: {art['column_width']}")
         if art.get("full_width_header"):
             lines.append("    full_width_header: true")
+        if art.get("full_width_footer"):
+            lines.append("    full_width_footer: true")
         if art.get("column_separator"):
             lines.append("    column_separator: true")
         if art.get("show_border"):
             lines.append("    show_border: true")
         if art.get("column_gap"):
             lines.append(f"    column_gap: {art['column_gap']}")
+
+        # Article-level inline images
+        inline_imgs = art.get("images", [])
+        if inline_imgs:
+            lines.append("    images:")
+            for img in inline_imgs:
+                lines.append(f"      - src: {img['src']}")
+                if img.get("caption"):
+                    cap = str(img["caption"]).replace('"', '\\"')
+                    lines.append(f'        caption: "{cap}"')
+                if img.get("border") is not None and img["border"] != 1:
+                    lines.append(f"        border: {img['border']}")
+                if img.get("scale") is not None and img["scale"] != 100:
+                    lines.append(f"        scale: {img['scale']}")
+
         lines.append("    placements:")
         for pl in art.get("placements", []):
             lines.append(f"      - page: {pl['page']}")
-            lines.append("        cells:")
-            for cr in pl.get("cells", []):
-                lines.append(f"          - {json.dumps(cr)}")
-            if pl.get("images"):
+            cell_list = pl.get("cells", []) or []
+            if cell_list:
+                lines.append("        cells:")
+                for cr in cell_list:
+                    lines.append(f"          - {json.dumps(cr)}")
+            else:
+                lines.append("        cells: []")
+            # Only grid images remain in placements
+            grid_imgs = [img for img in pl.get("images", []) if img.get("mode") == "grid"]
+            if grid_imgs:
                 lines.append("        images:")
-                for img in pl["images"]:
+                for img in grid_imgs:
                     lines.append(f"          - src: {img['src']}")
-                    lines.append(f"            mode: {img.get('mode', 'grid')}")
+                    lines.append(f"            mode: grid")
                     if img.get("cells"):
                         lines.append("            cells:")
                         for icr in img["cells"]:
                             lines.append(f"              - {json.dumps(icr)}")
                     if img.get("caption"):
-                        # Escape quotes in caption
                         cap = str(img["caption"]).replace('"', '\\"')
                         lines.append(f'            caption: "{cap}"')
                     if img.get("x-alignment") and img.get("x-alignment") != "center":
@@ -325,8 +439,6 @@ def serialize_layout(data):
                         lines.append(f"            y-alignment: {img['y-alignment']}")
                     if img.get("border") is not None and img["border"] != 1:
                         lines.append(f"            border: {img['border']}")
-                    if img.get("scale") is not None and img["scale"] != 100:
-                        lines.append(f"            scale: {img['scale']}")
         lines.append("")
 
     return "\n".join(lines) + "\n"
