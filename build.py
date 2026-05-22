@@ -25,12 +25,40 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parent
 BUILD = ROOT / "build"
-ARTICLES_DIR = ROOT / "articles"
-IMAGES_DIR = ARTICLES_DIR / "images"
-BLURBS_DIR = ROOT / "blurbs"
-LOGO_DIR = ROOT / "logo"
+ISSUES_DIR = ROOT / "issues"
+BLURBS_DIR = ROOT / "blurbs"   # shared org data, not per-issue
+LOGO_DIR = ROOT / "logo"       # shared org logos, not per-issue
+
+# Per-issue input directories. These are resolved at runtime once the active
+# issue is known (see resolve_issue() / main()); the defaults are placeholders.
+ARTICLES_DIR = ISSUES_DIR
+IMAGES_DIR = ISSUES_DIR
 
 API_URL = "https://core.acm.illinois.edu/api/v1/organizations"
+
+
+def resolve_issue(issue_arg: str | None) -> Path:
+    """Return the directory of the active issue under issues/.
+
+    With ``--issue NAME`` use ``issues/NAME``; otherwise default to the
+    most-recently-modified folder under ``issues/`` (ignoring ``_template``
+    and dotfiles). Exits with an error if nothing suitable is found.
+    """
+    if issue_arg:
+        d = ISSUES_DIR / issue_arg
+        if not d.is_dir():
+            print(f"  ERROR: issue '{issue_arg}' not found at {d}")
+            sys.exit(1)
+        return d
+    candidates = [
+        p for p in (ISSUES_DIR.iterdir() if ISSUES_DIR.is_dir() else [])
+        if p.is_dir() and not p.name.startswith(("_", "."))
+    ]
+    if not candidates:
+        print(f"  ERROR: no issues found in {ISSUES_DIR}/ "
+              f"(expected at least one issues/<name>/ folder)")
+        sys.exit(1)
+    return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
 # ---------------------------------------------------------------------------
@@ -741,6 +769,10 @@ def main():
         "--debug", action="store_true",
         help="Enable debug mode (show grid lines and bounding boxes)"
     )
+    parser.add_argument(
+        "--issue", default=None,
+        help="Issue folder under issues/ (default: most recently modified)"
+    )
     args = parser.parse_args()
 
     # Set up overflow warning logger (writes to stderr)
@@ -752,15 +784,22 @@ def main():
 
     modes = ["online", "print"] if args.mode == "both" else [args.mode]
 
+    # Resolve the active issue and point the per-issue paths at it.
+    global ARTICLES_DIR, IMAGES_DIR
+    issue_dir = resolve_issue(args.issue)
+    ARTICLES_DIR = issue_dir / "articles"
+    IMAGES_DIR = ARTICLES_DIR / "images"
+    print(f"Issue: {issue_dir.name}")
+
     # 1. Load configs
     print("Loading configuration...")
-    with open(ROOT / "config.yaml") as f:
+    with open(issue_dir / "config.yaml") as f:
         config = yaml.safe_load(f)
-    with open(ROOT / "events.yaml") as f:
+    with open(issue_dir / "events.yaml") as f:
         events_data = yaml.safe_load(f)
 
     # Load horoscope if present
-    horoscope_path = ROOT / "horoscope.yaml"
+    horoscope_path = issue_dir / "horoscope.yaml"
     horoscope = None
     if horoscope_path.exists():
         with open(horoscope_path) as f:
@@ -786,16 +825,18 @@ def main():
 
     # 5. Load LFTC
     print("Loading letter from the chair...")
-    lftc = load_article(ROOT / "lftc.md")
+    lftc = load_article(issue_dir / "lftc.md")
 
     article_files = {f.stem for f in ARTICLES_DIR.glob("*.md")}
 
     post_overflow_total = 0
     for mode in modes:
-        # Load mode-specific layout, falling back to layout.yaml
-        layout_path = ROOT / f"layout-{mode}.yaml"
+        # Each mode requires its own layout file.
+        layout_path = issue_dir / f"layout-{mode}.yaml"
         if not layout_path.exists():
-            layout_path = ROOT / "layout.yaml"
+            print(f"  ERROR: {layout_path.name} not found in {issue_dir.name}/. "
+                  f"Both layout-online.yaml and layout-print.yaml are required.")
+            sys.exit(1)
         print(f"Loading layout from {layout_path.name}...")
         with open(layout_path) as f:
             layout = yaml.safe_load(f)
@@ -891,6 +932,7 @@ def main():
             },
             "qr_codes": qr_map,
             "horoscope": horoscope,
+            "images_base": "/" + str(IMAGES_DIR.relative_to(ROOT)),
             "mode": mode,
         }
 

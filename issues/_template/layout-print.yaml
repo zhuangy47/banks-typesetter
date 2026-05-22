@@ -1,0 +1,11 @@
+# layout-print.yaml -- Grid-based article placement (print edition)
+
+grid:
+  rows: 24
+  columns: 6
+  gutter: 8pt
+  text_gutter: 8pt
+
+# The print edition often needs more room than online to fit QR codes.
+# Tip: lay out the online edition first, copy it here, then adjust.
+articles: []

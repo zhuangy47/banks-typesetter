@@ -17,7 +17,7 @@
 }
 
 // Render a single article page with all its articles
-#let render-article-page(page-num, layout-data, articles-data, mode, debug: false) = {
+#let render-article-page(page-num, layout-data, articles-data, mode, image-base: "/articles/images", debug: false) = {
   let grid-raw = layout-data.grid
   let grid-config = (
     cols: grid-raw.columns,
@@ -77,7 +77,7 @@
     // Prepare image data for layout functions (which handle header conflicts)
     let img-data = grid-images.map(img => (
       cells: img.cells,
-      path: "/articles/images/" + img.src,
+      path: image-base + "/" + img.src,
       caption: img.at("caption", default: none),
       x-alignment: img.at("x-alignment", default: "center"),
       y-alignment: img.at("y-alignment", default: "center"),

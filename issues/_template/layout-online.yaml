@@ -1,0 +1,17 @@
+# layout-online.yaml -- Grid-based article placement (online edition)
+
+grid:
+  rows: 24
+  columns: 6
+  gutter: 8pt
+  text_gutter: 8pt
+
+# Add one entry per article (slug = the articles/<slug>.md filename), e.g.:
+#   - slug: my-article
+#     column_width: 2
+#     full_width_header: true
+#     placements:
+#       - page: 1
+#         cells:
+#           - [[0, 0], [11, 5]]
+articles: []

@@ -1,0 +1,7 @@
+# Events shown on the title page. Each entry needs at least name + date.
+events: []
+  # - name: "Weekly Social Hour"
+  #   date: "Every Friday"
+  #   time: "5:00 PM - 6:00 PM"     # optional
+  #   location: "Siebel CS 1404"     # optional
+  #   description: "Come hang out!"  # optional

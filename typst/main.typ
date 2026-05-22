@@ -44,9 +44,11 @@
 // === Article Pages ===
 #let num-pages = max-page(data.layout)
 
+#let image-base = data.at("images_base", default: "/articles/images")
+
 #for page-num in range(1, num-pages + 1) {
   pagebreak()
-  render-article-page(page-num, data.layout, data.articles, mode, debug: debug)
+  render-article-page(page-num, data.layout, data.articles, mode, image-base: image-base, debug: debug)
 }
 
 // === Directory ===

@@ -1,13 +1,13 @@
-volume: 43
-issue: 1
-date: "November 11, 2025"
-headline: "TYPST LEADS UPRISING AGAINST LaTeX; ESTABLISHED ORDER COLLAPSES; NEW ENGINE CLAIMS AUTHORITY"
+volume: XX
+issue: X
+date: "January 1st, 2026"
+headline: "INSERT HEADLINE HERE"
 subtitle: "The Journal of the Association for Computing Machinery at the University of Illinois Urbana-Champaign"
 url: "banks.acm.illinois.edu"
 
 editors:
-  - "Yanni Zhuang"
-  - "Minh Duong"
+  - "Linus Torvalds"
+  - "Edsger Dijkstra"
 
 featured_email: "banks@acm.illinois.edu"
 

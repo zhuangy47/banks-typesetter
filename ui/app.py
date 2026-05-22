@@ -3,6 +3,7 @@ Banks of the Boneyard - Layout Editor UI
 Flask server providing a visual grid editor and article management.
 """
 import json
+import os
 import re
 import subprocess
 import threading
@@ -12,6 +13,26 @@ import yaml
 from flask import Flask, render_template, jsonify, request, send_file, abort
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def _resolve_issue_dir():
+    """Active issue directory: $BANKS_ISSUE, else the most-recent issues/<name>/."""
+    issues_dir = ROOT / "issues"
+    name = os.environ.get("BANKS_ISSUE", "").strip()
+    if name and (issues_dir / name).is_dir():
+        return issues_dir / name
+    candidates = [
+        p for p in (issues_dir.iterdir() if issues_dir.is_dir() else [])
+        if p.is_dir() and not p.name.startswith(("_", "."))
+    ]
+    if candidates:
+        return max(candidates, key=lambda p: p.stat().st_mtime)
+    # Nothing exists yet — fall back so the app still starts.
+    return issues_dir / (name or "issue")
+
+
+ISSUE_DIR = _resolve_issue_dir()
+ISSUE = ISSUE_DIR.name
 app = Flask(__name__)
 
 # ---------------------------------------------------------------------------
@@ -32,9 +53,9 @@ def index():
 
 def _layout_path_for_mode(mode):
     """Return the layout file path for a given mode (online/print)."""
-    if mode in ("online", "print"):
-        return ROOT / f"layout-{mode}.yaml"
-    return ROOT / "layout.yaml"
+    if mode not in ("online", "print"):
+        mode = "online"
+    return ISSUE_DIR / f"layout-{mode}.yaml"
 
 
 def _read_layout(path):
@@ -67,11 +88,8 @@ def _read_layout(path):
 @app.route("/api/layout")
 def get_layout():
     mode = request.args.get("mode", "")
-    path = _layout_path_for_mode(mode)
-    # Fall back to layout.yaml if mode-specific file doesn't exist
-    if not path.exists() and mode in ("online", "print"):
-        path = ROOT / "layout.yaml"
-    return jsonify(_read_layout(path))
+    # Missing file → _read_layout returns an empty grid to start from.
+    return jsonify(_read_layout(_layout_path_for_mode(mode)))
 
 
 @app.route("/api/layout", methods=["PUT"])
@@ -95,14 +113,10 @@ def copy_layout():
     if src_mode == dst_mode:
         return jsonify({"error": "from and to must differ"}), 400
     src_path = _layout_path_for_mode(src_mode)
-    # Fall back to layout.yaml if source doesn't exist
-    if not src_path.exists():
-        src_path = ROOT / "layout.yaml"
     dst_path = _layout_path_for_mode(dst_mode)
-    if src_path.exists():
-        dst_path.write_text(src_path.read_text())
-    else:
+    if not src_path.exists():
         return jsonify({"error": f"Source layout ({src_path.name}) not found"}), 404
+    dst_path.write_text(src_path.read_text())
     return jsonify({"ok": True})
 
 
@@ -110,14 +124,14 @@ def copy_layout():
 
 @app.route("/api/config")
 def get_config():
-    with open(ROOT / "config.yaml") as f:
+    with open(ISSUE_DIR / "config.yaml") as f:
         return jsonify(yaml.safe_load(f))
 
 
 @app.route("/api/config", methods=["PUT"])
 def put_config():
     data = request.json
-    with open(ROOT / "config.yaml", "w") as f:
+    with open(ISSUE_DIR / "config.yaml", "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
     return jsonify({"ok": True})
 
@@ -126,14 +140,14 @@ def put_config():
 
 @app.route("/api/events")
 def get_events():
-    with open(ROOT / "events.yaml") as f:
+    with open(ISSUE_DIR / "events.yaml") as f:
         return jsonify(yaml.safe_load(f))
 
 
 @app.route("/api/events", methods=["PUT"])
 def put_events():
     data = request.json
-    with open(ROOT / "events.yaml", "w") as f:
+    with open(ISSUE_DIR / "events.yaml", "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
     return jsonify({"ok": True})
 
@@ -143,7 +157,7 @@ def put_events():
 @app.route("/api/articles")
 def list_articles():
     articles = []
-    for md in sorted((ROOT / "articles").glob("*.md")):
+    for md in sorted((ISSUE_DIR / "articles").glob("*.md")):
         text = md.read_text()
         fm = _parse_frontmatter(text)
         body = _extract_body(text)
@@ -159,7 +173,7 @@ def list_articles():
 
 @app.route("/api/articles/<slug>")
 def get_article(slug):
-    path = ROOT / "articles" / f"{slug}.md"
+    path = ISSUE_DIR / "articles" / f"{slug}.md"
     if not path.exists():
         abort(404)
     text = path.read_text()
@@ -176,7 +190,7 @@ def get_article(slug):
 @app.route("/api/articles/<slug>", methods=["PUT"])
 def put_article(slug):
     data = request.json
-    path = ROOT / "articles" / f"{slug}.md"
+    path = ISSUE_DIR / "articles" / f"{slug}.md"
     content = "---\n"
     content += yaml.dump(
         {"title": data["title"], "authors": data["authors"]},
@@ -192,7 +206,7 @@ def put_article(slug):
 def create_article():
     data = request.json
     slug = data["slug"]
-    path = ROOT / "articles" / f"{slug}.md"
+    path = ISSUE_DIR / "articles" / f"{slug}.md"
     if path.exists():
         return jsonify({"error": "Article already exists"}), 409
     content = "---\n"
@@ -208,7 +222,7 @@ def create_article():
 
 @app.route("/api/articles/<slug>", methods=["DELETE"])
 def delete_article(slug):
-    path = ROOT / "articles" / f"{slug}.md"
+    path = ISSUE_DIR / "articles" / f"{slug}.md"
     if not path.exists():
         abort(404)
     path.unlink()
@@ -219,7 +233,7 @@ def delete_article(slug):
 
 @app.route("/api/lftc")
 def get_lftc():
-    path = ROOT / "lftc.md"
+    path = ISSUE_DIR / "lftc.md"
     text = path.read_text()
     fm = _parse_frontmatter(text)
     body = _extract_body(text)
@@ -233,7 +247,7 @@ def get_lftc():
 @app.route("/api/lftc", methods=["PUT"])
 def put_lftc():
     data = request.json
-    path = ROOT / "lftc.md"
+    path = ISSUE_DIR / "lftc.md"
     content = "---\n"
     content += yaml.dump(
         {"title": data.get("title", "Letter from the Chair"), "authors": [data["author"]]},
@@ -249,7 +263,7 @@ def put_lftc():
 
 @app.route("/api/images")
 def list_images():
-    img_dir = ROOT / "articles" / "images"
+    img_dir = ISSUE_DIR / "articles" / "images"
     if not img_dir.exists():
         return jsonify([])
     exts = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
@@ -259,7 +273,7 @@ def list_images():
 
 @app.route("/api/images/<name>")
 def get_image(name):
-    path = ROOT / "articles" / "images" / name
+    path = ISSUE_DIR / "articles" / "images" / name
     if not path.exists():
         abort(404)
     return send_file(path)
@@ -270,7 +284,7 @@ def upload_image():
     if "file" not in request.files:
         return jsonify({"error": "No file"}), 400
     f = request.files["file"]
-    dest = ROOT / "articles" / "images" / f.filename
+    dest = ISSUE_DIR / "articles" / "images" / f.filename
     f.save(dest)
     return jsonify({"ok": True, "name": f.filename}), 201
 
@@ -290,7 +304,7 @@ def start_build():
     def run():
         try:
             cmd = [str(ROOT / ".venv" / "bin" / "python"), str(ROOT / "build.py"),
-                   "--mode", mode]
+                   "--mode", mode, "--issue", ISSUE]
             if debug:
                 cmd.append("--debug")
             proc = subprocess.Popen(
