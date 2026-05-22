@@ -1,6 +1,6 @@
 # Banks of the Boneyard
 
-The typesetting pipeline for *Banks of the Boneyard*, the newspaper of [ACM@UIUC](https://acm.illinois.edu). It turns Markdown articles, a handful of YAML files, and live organization data into a print-ready PDF newspaper using [Typst](https://typst.app).
+The typesetting pipeline for *Banks of the Boneyard*. It turns Markdown articles, a handful of YAML files, and live organization data into a print-ready PDF newspaper using [Typst](https://typst.app).
 
 Every issue is produced in two editions:
 
