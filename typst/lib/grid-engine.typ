@@ -56,23 +56,6 @@
   (col-start: min-col, row-start: min-row, col-end: max-col, row-end: max-row)
 }
 
-// Place content at grid position
-#let place-at-cells(cells, content, grid: default-grid) = {
-  let bbox = cells-bbox(cells)
-  let rect = cell-rect(bbox.col-start, bbox.row-start, bbox.col-end, bbox.row-end, grid: grid)
-  place(
-    top + left,
-    dx: rect.x,
-    dy: rect.y,
-    block(
-      width: rect.width,
-      height: rect.height,
-      clip: true,
-      content,
-    )
-  )
-}
-
 // ── Cell Expansion & Adjacency ──────────────────────────────
 
 // Expand cell specs into individual (col, row) position arrays.

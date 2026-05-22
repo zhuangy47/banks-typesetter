@@ -40,7 +40,8 @@
       "Bash(make print:*)",
       "Bash(typst query:*)",
       "Bash(make online-debug:*)",
-      "Bash(make print-debug:*)"
+      "Bash(make print-debug:*)",
+      "Bash(grep -c '\\\\b__TRACKED_VAR__\\\\b' build.py)"
     ]
   }
 }

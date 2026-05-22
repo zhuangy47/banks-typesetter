@@ -27,7 +27,7 @@ This document explains, in full detail, how every piece of the Banks of the Bone
    - 6.6 [Step 6 -- Build Table of Contents](#66-step-6----build-table-of-contents)
    - 6.7 [Step 7 -- Generate QR Codes (Print Mode)](#67-step-7----generate-qr-codes-print-mode)
    - 6.8 [Step 8 -- Markdown-to-Typst Conversion](#68-step-8----markdown-to-typst-conversion)
-   - 6.9 [Step 9 -- Multi-Page Article Splitting](#69-step-9----multi-page-article-splitting)
+   - 6.9 [Step 9 -- Multi-Page Articles](#69-step-9----multi-page-articles)
    - 6.10 [Step 10 -- Merge Image Captions](#610-step-10----merge-image-captions)
    - 6.11 [Step 11 -- Write data.json](#611-step-11----write-datajson)
    - 6.12 [Step 12 -- Compile with Typst](#612-step-12----compile-with-typst)
@@ -62,7 +62,7 @@ Banks of the Boneyard is a two-stage typesetting pipeline:
 ```
                          ┌─────────────────────┐
   config.yaml ──────────>│                     │
-  layout.yaml ──────────>│                     │──> build/data.json
+  layout-*.yaml ────────>│                     │──> build/data.json
   events.yaml ──────────>│     build.py        │──> build/articles/*.typ
   articles/*.md ────────>│   (Python stage)    │──> build/lftc.typ
   lftc.md ──────────────>│                     │──> build/qrcodes/*.png
@@ -79,7 +79,7 @@ Banks of the Boneyard is a two-stage typesetting pipeline:
                          └─────────────────────┘
 ```
 
-**Stage 1 (Python)** handles all data ingestion: it loads YAML configuration, fetches live organization data from the ACM Core API, validates layout constraints, converts Markdown articles to Typst markup, splits multi-page articles at paragraph boundaries, generates QR codes for print mode, and writes everything into a `build/` directory as `data.json` plus `.typ` fragment files.
+**Stage 1 (Python)** handles all data ingestion: it loads YAML configuration, fetches live organization data from the ACM Core API, validates layout constraints, converts Markdown articles to Typst markup, generates QR codes for print mode, and writes everything into a `build/` directory as `data.json` plus `.typ` fragment files. Multi-page article splitting is **not** done here -- each article body is written as a single fragment and Typst splits it across pages at render time (see [Section 6.9](#69-step-9----multi-page-articles)). The layout is read **per mode** from `layout-<mode>.yaml` (falling back to `layout.yaml`), so online and print can use different placements.
 
 **Stage 2 (Typst)** reads `data.json` and the generated `.typ` fragments, then renders the final PDF. The Typst template system handles page layout, grid-based absolute positioning, multi-column text flow, image placement, the title page, the organization directory, and optional sections like horoscopes.
 
@@ -97,7 +97,9 @@ new_banks/
 ├── Makefile                  # Build automation
 ├── requirements.txt          # Python dependencies
 ├── config.yaml               # Publication metadata
-├── layout.yaml               # Grid-based article placement DSL
+├── layout-online.yaml        # Grid-based placement DSL (online mode)
+├── layout-print.yaml         # Grid-based placement DSL (print mode)
+├── layout.yaml               # Fallback layout if a mode-specific file is absent
 ├── events.yaml               # Upcoming events for title page
 ├── lftc.md                   # Letter from the Chair (markdown)
 ├── articles/                 # Article markdown files
@@ -173,10 +175,14 @@ This runs `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` a
 | `make online` | Build online PDF only |
 | `make print` | Build print PDF only |
 | `make strict` | Build print PDF; exit non-zero if any article overflows |
-| `make ui` | Start the Flask web editor |
+| `make online-debug` | Build online PDF with debug overlays (grid lines, bounding boxes, overflow bands) |
+| `make print-debug` | Build print PDF with debug overlays |
+| `make ui` | Start the Flask web editor (http://localhost:3000) |
 | `make clean` | Delete the `build/` directory |
 
-Direct invocation: `.venv/bin/python build.py --mode online|print|both [--strict]`
+Direct invocation: `.venv/bin/python build.py --mode online|print|both [--strict] [--debug]`
+
+`--debug` passes `debug=true` to Typst, which draws the grid, per-article/image bounding boxes, text-column outlines, and red overflow bands. Debug builds are written to `banks-<mode>-debug.pdf` so they don't clobber the normal output.
 
 ---
 
@@ -207,17 +213,19 @@ directory_order:             # MUST list every org slug from the API
   - ...
 ```
 
-**`directory_order` is critical**: it defines the exact display order of organizations on the directory page. If the ACM Core API returns an organization not listed here, the build will print a warning. If a slug listed here does not exist in the API response, a warning is also printed (but the build continues).
+**`directory_order` is critical**: it defines the exact display order of organizations on the directory page. If the ACM Core API returns an organization not listed here, the build prints a warning. If a slug listed here does not exist in the API response, an error is printed but the build continues (the slug is skipped).
 
-### 4.2 layout.yaml
+### 4.2 layout-<mode>.yaml
 
 This is the heart of the placement system. It defines a grid and specifies where every article and image sits on each page. A full explanation of the layout DSL is in [Section 7](#7-the-layout-system-in-depth).
+
+**Per-mode layouts.** `build.py` loads `layout-<mode>.yaml` for the mode being built (`layout-online.yaml` or `layout-print.yaml`), falling back to `layout.yaml` only if the mode-specific file does not exist. This lets the print edition reflow differently from the online edition (e.g., leaving room for QR codes). The web UI reads and writes the mode-specific file. Keep the three files' `grid:` blocks consistent unless you intend them to differ.
 
 **Top-level structure:**
 
 ```yaml
 grid:
-  rows: 12          # Number of rows per page
+  rows: 24          # Number of rows per page (current layouts use 24)
   columns: 6        # Number of columns per page
   gutter: 8pt       # Space between grid cells
   text_gutter: 8pt  # Gap between text columns within an article
@@ -226,10 +234,13 @@ articles:
   - slug: banks                  # Must match articles/banks.md
     column_width: 3              # Text column width in grid units
     full_width_header: true      # Title spans full article width
+    images:                      # Article-level images are INLINE (see 7.4)
+      - src: photo.jpg
+        scale: 70
     placements:
       - page: 1
         cells:
-          - [[0, 0], [4, 5]]    # Rows 0-4, columns 0-5
+          - [[0, 0], [9, 5]]    # Rows 0-9, columns 0-5
   - slug: rparticle
     # ...
 ```
@@ -238,10 +249,12 @@ Each article entry has:
 - `slug` (required): matches the `.md` filename in `articles/`
 - `column_width` (required): how many grid columns make one text column
 - `full_width_header` (optional, default `false`): if `true`, the title/author line spans the full article width above the text columns
+- `full_width_footer` (optional, default `false`): if `true`, the end-of-article rule / continuation marker spans the full width below all columns instead of sitting in the last column
 - `column_gap` (optional): overrides `grid.text_gutter` for this article
 - `column_separator` (optional, default `false`): draw vertical rules between columns
 - `show_border` (optional, default `false`): draw an outline around the article
-- `placements` (required): array of page placements (one per page the article appears on)
+- `images` (optional): **inline** images for this article (declared at the article level, not inside a placement; see [Section 7.4](#74-image-placement-modes))
+- `placements` (required): array of page placements (one per page the article appears on). **Grid-mode** images are declared inside a placement's `images` array.
 
 ### 4.3 events.yaml
 
@@ -316,13 +329,18 @@ Article body using standard markdown.
 | `- item` | `- item` | Unordered list |
 | `1. item` | `+ item` | Ordered list (Typst auto-numbers) |
 | `<br/>` | `#v(0.5em)` | Vertical space |
+| `<!-- break -->` | `#v(1em)` | One blank line of vertical space |
+| `<!-- vspace 1.5em -->` | `#v(1.5em)` | Configurable vertical space (bare `<!-- vspace -->` = 1em) |
+| `<!-- colbreak -->` | `#colbreak()` | Force the following content into the next text column |
 | `@` | `\@` | Escaped (Typst uses @ for references) |
 
-**Image handling** depends on placement mode (see [Section 7.4](#74-image-placement-modes)):
-- **Grid-mode images**: referenced in `layout.yaml` with `mode: grid` and `cells`. These are *removed* from the markdown body (the grid engine places them at their cell coordinates).
-- **Inline images**: referenced in `layout.yaml` with `mode: inline`. These *remain* in the markdown flow and are rendered at their position in the text with an optional `scale` (width percentage) and `border`.
+The `<!-- ... -->` markers are HTML comments, so they are invisible when the same markdown is rendered on the website but let you nudge the print/PDF layout (extra space, forced column breaks) without affecting the web copy.
 
-If an image in the markdown is not referenced in `layout.yaml` at all, it is treated as inline at 100% width with a 1pt border.
+**Image handling** depends on placement mode (see [Section 7.4](#74-image-placement-modes)):
+- **Grid-mode images**: declared inside a placement's `images` array (with `cells`, `mode: grid` is the default there). These are *removed* from the markdown body (the grid engine places them at their cell coordinates).
+- **Inline images**: declared in the article-level `images` array. These *remain* in the markdown flow and are rendered at their position in the text with an optional `scale` (width percentage) and `border`.
+
+If an image in the markdown is not declared in the layout at all, it is treated as inline at 100% width with a 1pt border.
 
 ### 5.2 Organization Blurbs
 
@@ -354,19 +372,26 @@ Organization logos live in `logo/<slug>.{png,jpg,jpeg,svg}`. The build script ch
 
 ## 6. The Build Pipeline (build.py)
 
-`build.py` is a ~1075-line Python script that orchestrates the entire build. It accepts `--mode online|print|both` and `--strict` (treat overflow as error). When `mode` is `both`, it runs the entire conversion and compilation twice (once per mode), since markdown-to-Typst conversion differs between modes (link rendering and QR codes).
+`build.py` is a ~980-line Python script that orchestrates the entire build. It accepts `--mode online|print|both`, `--strict` (treat overflow as error), and `--debug` (draw layout overlays). When `mode` is `both`, it runs the entire per-mode pipeline twice, since both the layout file and the markdown-to-Typst conversion differ between modes (link rendering and QR codes).
+
+**Once-per-run vs. per-mode.** The config/events/horoscope load, API fetch, and article/LFTC load (Steps 1, 4, 5 below) happen a single time. Everything else -- layout load + validation, text-column computation, TOC, QR codes, conversion, caption merge, `data.json` write, compile, and overflow check -- runs once **per mode** inside the mode loop, because each mode has its own `layout-<mode>.yaml`.
 
 ### 6.1 Step 1 -- Load Configuration
 
 ```python
 config = yaml.safe_load(open("config.yaml"))
 events_data = yaml.safe_load(open("events.yaml"))
-layout = yaml.safe_load(open("layout.yaml"))
 # Optional:
 horoscope = yaml.safe_load(open("horoscope.yaml"))  # if file exists
+
+# ...later, inside the per-mode loop:
+layout_path = ROOT / f"layout-{mode}.yaml"
+if not layout_path.exists():
+    layout_path = ROOT / "layout.yaml"   # fallback
+layout = yaml.safe_load(open(layout_path))
 ```
 
-All three YAML files are loaded and kept in memory. The horoscope file is optional -- if absent, `horoscope` is `None` and the Typst template skips the horoscope page.
+`config.yaml`, `events.yaml`, and the optional `horoscope.yaml` are loaded once and kept in memory. The horoscope file is optional -- if absent, `horoscope` is `None` and the Typst template skips the horoscope page. The **layout** is loaded inside the per-mode loop, choosing `layout-<mode>.yaml` and falling back to `layout.yaml`. Each article's `placements` are then sorted by page number.
 
 ### 6.2 Step 2 -- Validate Layout
 
@@ -379,8 +404,8 @@ All three YAML files are loaded and kept in memory. The horoscope file is option
 5. **Image cell rectangularity**: Grid-mode image cells must form a perfect rectangle.
 6. **Image cell bounds**: Image cells must be within grid bounds.
 7. **No cell overlaps**: A per-page cell ownership map detects any cell claimed by two different articles or two different images. An article's own grid-mode images *may* overlap with its text cells (this is expected -- the text region shrinks to accommodate).
-8. **Mode validation**: Image mode must be `"grid"` or `"inline"`.
-9. **Inline image constraints**: Inline images must not have `cells`; `scale` must be 1-100.
+8. **Placement image mode**: an image declared inside a placement's `images` array must be `mode: grid` (the default). Inline images belong in the article-level `images` array, not in a placement.
+9. **Inline image constraints**: article-level (inline) images must not have `cells`; `scale` must be 1-100.
 10. **Alignment validation**: Grid images' `x-alignment` and `y-alignment` must be `left`, `center`, or `right`.
 11. **Border validation**: `border` must be a non-negative number.
 
@@ -442,7 +467,7 @@ for md_file in ARTICLES_DIR.glob("*.md"):
 
 ### 6.6 Step 6 -- Build Table of Contents
 
-`build_toc()` iterates through `layout["articles"]` sorted by first page number, and builds a list of `{slug, title, authors, page}` dicts. This is rendered as the "In This Issue" section on the title page. Page numbers are 0-indexed internally and displayed as 1-indexed (+1) in the Typst template.
+`build_toc()` iterates through `layout["articles"]` sorted by first page number, and builds a list of `{slug, title, authors, page}` dicts (`page` is the placement's layout page number, 1-based). This is rendered as the "In This Issue" section on the title page. The title-page template displays `page + 1` because the title page is PDF page 1, so layout article-page *N* is PDF page *N+1*.
 
 ### 6.7 Step 7 -- Generate QR Codes (Print Mode)
 
@@ -462,7 +487,7 @@ qr_map = generate_qr_codes(list(set(all_urls)), BUILD / "qrcodes")
 - Files are cached: if the file already exists, it's not regenerated
 - Returns a `url -> relative_path` mapping (e.g., `"https://..." -> "qrcodes/a1b2c3d4e5f6.png"`)
 
-If the `qrcode` package is not installed, QR generation is silently skipped.
+If the `qrcode` package is not installed, QR generation is skipped with a warning (non-fatal; links then fall back to plain text + tiny URL).
 
 ### 6.8 Step 8 -- Markdown-to-Typst Conversion
 
@@ -500,25 +525,15 @@ for slug, article in articles.items():
 
 8. **`@` escaping**: After all lines are converted, `@` is escaped to `\@` (Typst uses `@` for cross-references). The regex avoids escaping `@` inside `#link()` calls.
 
-### 6.9 Step 9 -- Multi-Page Article Splitting
+### 6.9 Step 9 -- Multi-Page Articles
 
-If an article has multiple placements (i.e., spans multiple pages), its converted Typst content is split into parts:
+**Splitting is not done in Python.** Whether an article spans one page or several, `build.py` writes its *entire* converted body to a single fragment:
 
 ```python
-num_pages = count_article_pages(layout, slug)
-if num_pages > 1:
-    parts = split_into_parts(typ_content, num_pages)
-    for i, part in enumerate(parts):
-        (build_articles / f"{slug}-part{i}.typ").write_text(part)
-else:
-    (build_articles / f"{slug}.typ").write_text(typ_content)
+(build_articles / f"{slug}.typ").write_text(typ_content)
 ```
 
-**`split_into_parts()`** splits at paragraph boundaries (blank lines in the Typst content):
-1. Split content into paragraphs (text separated by blank lines).
-2. Distribute paragraphs as evenly as possible across `num_parts`. Uses integer division with remainder distributed to early parts.
-
-There is also `split_into_weighted_parts()` which distributes paragraphs proportionally to given weights (representing relative area of each band), though the current `main()` uses the simpler even split.
+There are no `-part0.typ` / `-part1.typ` files. An article spans multiple pages purely by having multiple `placements` in the layout, and Typst performs the actual splitting at render time: it decomposes the body into word-level "atoms," binary-searches how many atoms fit in each page's allocated area, and coordinates the page boundaries by emitting `<article-consumed>` metadata that later pages read back via Typst's in-document `query()` introspection (resolved over Typst's multi-pass layout, not the external `typst query` CLI; see [Section 8.3](#83-grid-enginetyp----layout-math) and [Section 8.5](#85-article-pagetyp----article-rendering)). Splitting at measurement time is what lets it fill each page exactly rather than guessing at paragraph boundaries.
 
 ### 6.10 Step 10 -- Merge Image Captions
 
@@ -552,19 +567,21 @@ This is the **sole data interface** between the Python stage and the Typst stage
 ### 6.12 Step 12 -- Compile with Typst
 
 ```python
+suffix = f"{mode}-debug" if args.debug else mode
 cmd = [
     "typst", "compile",
     "typst/main.typ",
-    "build/output/banks-{mode}.pdf",
-    "--root", ROOT,           # Root directory for absolute paths in Typst
-    "--input", f"mode={mode}",  # CLI variable accessible via sys.inputs
+    f"build/output/banks-{suffix}.pdf",
+    "--root", ROOT,                  # Root directory for absolute paths in Typst
+    "--input", f"mode={mode}",       # CLI variable accessible via sys.inputs
+    "--input", f"debug={debug_str}", # "true"/"false" toggles layout overlays
 ]
 subprocess.run(cmd, capture_output=True, text=True)
 ```
 
 The `--root` flag tells Typst that `/` in import paths resolves to the project root. This is why Typst files use paths like `"/build/data.json"` and `"/articles/images/photo.jpg"`.
 
-The `--input mode=online` flag passes the mode as a Typst system input, accessed in `main.typ` via `sys.inputs.at("mode")`.
+The `--input mode=online` flag passes the mode as a Typst system input, accessed in `main.typ` via `sys.inputs.at("mode")`. Likewise `--input debug=...` is read as `sys.inputs.at("debug")`; when `--debug` is set the output filename gains a `-debug` suffix (e.g. `banks-online-debug.pdf`) so it doesn't overwrite the clean PDF.
 
 ### 6.13 Step 13 -- Post-Compilation Overflow Check
 
@@ -589,7 +606,7 @@ With `--strict`, any overflow causes exit code 1.
 
 ### 7.1 Grid Coordinate System
 
-Each article page uses a configurable grid (default: **12 rows x 6 columns**). The grid covers the full content area of the page (page size minus margins).
+Each article page uses a grid whose dimensions come from the layout file's `grid:` block. The current layouts use **24 rows x 6 columns**; the grid engine's built-in fallback (`default-grid`, used only if a layout omits the values) is 12 rows x 6 columns. The grid covers the full content area of the page (page size minus margins). The diagram below shows a 12-row grid for illustration.
 
 ```
           col 0    col 1    col 2    col 3    col 4    col 5
@@ -615,7 +632,7 @@ Where `content_width = 8.5in - 2 * 0.5in = 7.5in` and `content_height = 11in - 2
 
 ### 7.2 Cell Specification Syntax
 
-Cells in `layout.yaml` use `[row, col]` coordinates (origin at top-left, 0-indexed):
+Cells in the layout files use `[row, col]` coordinates (origin at top-left, 0-indexed):
 
 ```yaml
 # Single cell:
@@ -652,20 +669,24 @@ Text columns are separated by `text_gutter` (or the per-article `column_gap` ove
 
 ### 7.4 Image Placement Modes
 
-Images are declared within a placement's `images` array:
+The two image modes are declared in **different places**: grid images live inside a *placement's* `images` array, while inline images live in the *article-level* `images` array (a sibling of `placements`).
 
-#### Grid Mode (default)
+#### Grid Mode (declared inside a placement)
 
 ```yaml
-images:
-  - src: photo.jpg
-    mode: grid
+placements:
+  - page: 1
     cells:
-      - [[10, 0], [11, 1]]      # Where to position the image
-    caption: "Photo credit"      # Optional (auto-extracted from markdown alt text)
-    x-alignment: center          # left | center | right (default: center)
-    y-alignment: center          # left | center | right (default: center)
-    border: 1                    # Border width in pt (0 = no border, default: 1)
+      - [[0, 0], [11, 5]]
+    images:                       # placement-level → grid mode
+      - src: photo.jpg
+        mode: grid
+        cells:
+          - [[10, 0], [11, 1]]    # Where to position the image
+        caption: "Photo credit"   # Optional (auto-extracted from markdown alt text)
+        x-alignment: center       # left | center | right (default: center)
+        y-alignment: center       # left | center | right (default: center)
+        border: 1                 # Border width in pt (0 = no border, default: 1)
 ```
 
 Grid-mode images are:
@@ -676,21 +697,26 @@ Grid-mode images are:
 
 The image is fit within its cell box while maintaining aspect ratio. If the image is taller than the available height, it is scaled down proportionally.
 
-#### Inline Mode
+#### Inline Mode (declared at the article level)
 
 ```yaml
-images:
-  - src: photo.jpg
-    mode: inline
-    scale: 80                    # Width as % of text column (default: 100)
-    border: 1                    # Border width in pt (default: 1)
+- slug: my-article
+  column_width: 2
+  images:                        # article-level → inline mode
+    - src: photo.jpg
+      scale: 80                  # Width as % of text column (default: 100)
+      border: 1                  # Border width in pt (default: 1)
+  placements:
+    - page: 1
+      cells:
+        - [[0, 0], [11, 1]]
 ```
 
 Inline images:
-- **Stay** in the markdown body at their original position
+- **Stay** in the markdown body at their original position (matched by filename)
 - Are rendered with the specified `scale` and `border`
-- Must NOT have `cells`
-- Are centered and include alt text as a caption below
+- Must NOT have `cells` (they're not grid-positioned), and need no `mode` key
+- Are centered and include the markdown alt text as a caption below
 
 ### 7.5 Non-Rectangular Layouts
 
@@ -726,7 +752,7 @@ Summary of all validations performed by `validate_layout()`:
 | Non-rectangular grid image | `cells are not rectangular` |
 | Image cell out of bounds | `cell (c,r) out of bounds` |
 | Cell overlap between articles/images | `cell (c,r) claimed by both 'X' and 'Y'` |
-| Invalid image mode | `unknown mode 'X'` |
+| Non-grid image in a placement | `placement images must be mode 'grid', got 'X'` |
 | Inline image with cells | `inline images must not have 'cells'` |
 | Invalid scale | `scale N must be between 1 and 100` |
 | Invalid alignment | `x-alignment 'X' must be one of: left, center, right` |
@@ -741,7 +767,7 @@ Summary of all validations performed by `validate_layout()`:
 `typst/main.typ` (60 lines) is the root entry point. Its responsibilities:
 
 1. **Import** all library modules from `typst/lib/`
-2. **Read mode** from CLI input: `sys.inputs.at("mode", default: "online")`
+2. **Read mode & debug** from CLI input: `sys.inputs.at("mode", default: "online")` and `sys.inputs.at("debug", default: "false") == "true"`; `debug` is threaded into `render-article-page`
 3. **Load data**: `json("/build/data.json")`
 4. **Configure page**: US Letter (8.5" x 11"), 0.5" margins, Georgia font, 9pt body size, justified paragraphs
 5. **Global link styling**: In online mode, links are underlined and blue; in print mode, unstyled
@@ -764,8 +790,8 @@ Summary of all validations performed by `validate_layout()`:
 - `heading-font`: Georgia
 - `body-font`: Georgia
 - `mono-font`: Courier New
-- `headline-size`: 48pt (title page headline)
-- `title-size`: 36pt
+- `headline-size`: 28pt (title page headline)
+- `title-size`: 36pt (defined but not currently referenced by the templates)
 - `subtitle-size`: 8pt
 - `section-heading-size`: 16pt (directory/horoscope headings)
 - `article-title-size`: 14pt
@@ -781,7 +807,7 @@ Summary of all validations performed by `validate_layout()`:
 
 ### 8.3 grid-engine.typ -- Layout Math
 
-`typst/lib/grid-engine.typ` (~1001 lines) is the most complex module. It provides everything needed to convert grid coordinates to absolute positions and place content on the page.
+`typst/lib/grid-engine.typ` (~1310 lines) is the most complex module. It provides everything needed to convert grid coordinates to absolute positions and place content on the page.
 
 #### Coordinate Conversion
 
@@ -797,8 +823,6 @@ h = (row-end - row-start + 1) * (cell_height + gutter) - gutter
 The `-gutter` at the end ensures the cell rectangle doesn't include the gutter on its right/bottom edge.
 
 **`cells-bbox(cells)`** computes the bounding box (min/max col/row) of a set of cell specs.
-
-**`place-at-cells(cells, content)`** places content at the bounding box of the given cells with clipping enabled.
 
 #### Cell Expansion & Adjacency
 
@@ -846,6 +870,8 @@ For non-rectangular layouts, content must be split at word boundaries to fill co
 7. **Overflow detection**: Measures body content at single-column width, divides by column count, and compares against available height. If overflowing, emits a `<overflow>` metadata label and clips content.
 8. Images are placed at their grid coordinates with optional `dy-offset` if they conflict with the header.
 
+**Multi-page rectangular articles** take a separate path inside the same function: `article-page.typ` passes the full unstyled body as `raw-body` plus `page-index`. The engine decomposes `raw-body` into atoms, sums how many atoms prior pages consumed (read from `<article-consumed>` metadata via `query`), binary-searches how many of the remaining atoms fit in this page's `body-h × num-columns` area, renders that slice, and emits its own `<article-consumed>` count so the next page knows where to resume. Overflow on the final page emits `<overflow>`.
+
 #### Non-Rectangular Article Placement
 
 **`place-article-columns()`** handles L-shaped and other non-rectangular layouts:
@@ -884,12 +910,12 @@ For non-rectangular layouts, content must be split at word boundaries to fill co
    - Center: Date in bold italic, uppercased
    - Right: URL (clickable in online mode)
 
-4. **Headline**: Large bold text (48pt) from `config.headline`
+4. **Headline**: Large bold text (`headline-size`, 28pt) from `config.headline`
 
 5. **Letter from the Chair**:
-   - Title "Letter from the Chair" (18pt)
-   - "By {author}" in italic
-   - Horizontal rule
+   - Title "Letter from the Chair" (18pt bold)
+   - "By {author}" in bold (body size)
+   - Short centered rule (40% width)
    - Body included from `/build/lftc.typ`
 
 6. **Double rule separator**: Two 1pt lines with 2pt gap
@@ -906,11 +932,11 @@ The title page is wrapped in `block(height: 100%, ...)` in `main.typ` to ensure 
 
 ### 8.5 article-page.typ -- Article Rendering
 
-`typst/lib/article-page.typ` (262 lines) handles all article pages.
+`typst/lib/article-page.typ` (~320 lines) handles all article pages.
 
-**`render-article-page(page-num, layout-data, articles-data, mode)`**:
+**`render-article-page(page-num, layout-data, articles-data, mode, debug: false)`**:
 
-1. Parses the grid configuration from `layout.yaml` (evaluating `"8pt"` strings into Typst lengths).
+1. Parses the grid configuration from the layout's `grid:` block (evaluating `"8pt"` strings into Typst lengths via `eval`).
 
 2. Collects all articles scheduled for this page by scanning `layout.articles[].placements[].page`.
 
@@ -926,9 +952,7 @@ The title page is wrapped in `block(height: 100%, ...)` in `main.typ` to ensure 
       - First page: article title (14pt bold) + authors ("By Author1, Author2" in 7pt italic) + horizontal rule
       - Continuation pages: smaller title (body-size + 2pt) + "Continued from page N" in italic
 
-   e. **Loads article body**: Includes the appropriate `.typ` file:
-      - Single-page: `/build/articles/{slug}.typ`
-      - Multi-page: `/build/articles/{slug}-part{index}.typ`
+   e. **Loads article body**: Always includes the single `/build/articles/{slug}.typ` fragment (there are no per-page files). For multi-page articles the full body is included on every page the article spans, and the grid engine renders only the slice that belongs to the current page (via the atom/`<article-consumed>` mechanism in [Section 8.3](#83-grid-enginetyp----layout-math)).
 
    f. **Builds body content** (for rectangular path): wraps raw body with text styling, link styling, and appends footer:
       - Last page: double rule (two horizontal lines)
@@ -941,6 +965,8 @@ The title page is wrapped in `block(height: 100%, ...)` in `main.typ` to ensure 
       - Rectangular: calls `place-article-text()`:
         - If `full_width_header`: header is passed separately, body excludes header
         - If not: header is prepended to body, header param is `none`
+
+When `debug` is true, each article additionally draws its cell bounding box (blue) with a slug label and its grid-image boxes (green), and after all articles the whole page grid is outlined with `row,col` labels in red. The per-region overlays (header/body/columns/footer/overflow bands) are drawn inside `place-article-text` / `place-article-columns`.
 
 **`max-page(layout-data)`** scans all placements to find the highest page number.
 
@@ -987,10 +1013,10 @@ Overflow is detected in two places:
 
 ### In `place-article-text()` (rectangular layouts):
 ```typst
-let single-col-h = measure(block(width: single-col-w, body-content)).height
-let body-overflows = single-col-h / num-columns > adj-h
+let single-col-h = measure(block(width: single-col-w, spacing: 0pt, effective-body)).height
+let body-overflows = single-col-h / num-columns > body-h
 ```
-The body is measured at single-column width, and the height is divided by the number of columns (approximating balanced column heights). If this exceeds available height, an `<overflow>` metadata label is emitted and content is clipped.
+The body is measured at single-column width, and the height is divided by the number of columns (approximating balanced column heights). If this exceeds the available `body-h`, an `<overflow>` metadata label is emitted and content is clipped. (For multi-page articles, overflow is instead reported by the atom-splitting path described in [Section 8.3](#83-grid-enginetyp----layout-math), only on the last page.)
 
 ### In `place-article-columns()` (non-rectangular layouts):
 ```typst
@@ -1007,6 +1033,8 @@ After flowing atoms through all columns, if atoms remain unplaced, an overflow i
 - Rectangular: content is **clipped** (rendered but cut off at the boundary)
 - Non-rectangular: remaining words are silently dropped (the binary search only places what fits)
 - In both cases, the metadata label allows the build script to detect and report the issue
+
+**Visualizing overflow.** Build with `make online-debug` / `make print-debug` (or `--debug`). The grid engine then draws the header (orange), body (magenta), text columns (cyan dashed), footer (brown), and image (green) regions, plus a red band and an `OVERFLOW: …` label at the column that overran -- making it obvious how much content was cut and where.
 
 ---
 
@@ -1035,16 +1063,18 @@ The mode is:
 
 The optional Flask web UI (`ui/app.py`) provides a browser-based editor for managing the newspaper.
 
-**Server**: `make ui` starts Flask on a local port.
+**Server**: `make ui` starts Flask on `http://localhost:3000`.
 
 **REST API endpoints:**
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | GET | Serve the editor HTML |
-| `/api/layout` | GET/PUT | Read/update `layout.yaml` |
+| `/api/layout?mode=<mode>` | GET/PUT | Read/update the mode-specific `layout-<mode>.yaml` (falls back to `layout.yaml`); PUT re-serializes via `serialize_layout()` |
+| `/api/layout/copy` | POST | Copy one mode's layout to the other (`{"from": "online", "to": "print"}`) |
 | `/api/config` | GET/PUT | Read/update `config.yaml` |
 | `/api/events` | GET/PUT | Read/update `events.yaml` |
+| `/api/articles` | GET | List all articles (slug, title, authors, images) |
 | `/api/articles/<slug>` | GET/PUT | Read/update an article |
 | `/api/articles` | POST | Create a new article |
 | `/api/articles/<slug>` | DELETE | Delete an article |
@@ -1052,9 +1082,12 @@ The optional Flask web UI (`ui/app.py`) provides a browser-based editor for mana
 | `/api/images` | GET | List all images |
 | `/api/images/<name>` | GET | Serve an image |
 | `/api/images` | POST | Upload an image |
-| `/api/build` | POST | Trigger a build (runs in a background thread) |
+| `/api/build` | POST | Trigger a build in a background thread (body: `{"mode", "debug"}`) |
 | `/api/build/status` | GET | Get build status and log output |
-| `/api/pdf/<mode>` | GET | Download a built PDF |
+| `/api/pdf/<mode>` | GET | Download a built PDF (`online`, `print`, `online-debug`, `print-debug`) |
+| `/api/pdfs` | GET | List which PDF variants currently exist on disk |
+
+Note that `PUT /api/layout` does not use `yaml.dump`; `serialize_layout()` writes the YAML by hand to preserve the project's formatting and field ordering. If you change the layout schema, update that function too.
 
 **Editor tabs:**
 1. **Layout**: Visual grid editor with drag-to-draw article placement, image positioning, properties panel
@@ -1070,22 +1103,23 @@ After a successful build, the `build/` directory contains:
 
 ```
 build/
-├── data.json                    # All merged metadata (Typst reads this)
+├── data.json                    # All merged metadata (Typst reads this); overwritten per mode
 ├── lftc.typ                     # Converted LFTC markdown
 ├── articles/
-│   ├── banks.typ                # Single-page article
-│   ├── rparticle-part0.typ      # Multi-page article, page 1
-│   ├── rparticle-part1.typ      # Multi-page article, page 2
+│   ├── banks.typ                # One fragment per article (full body, even if multi-page)
+│   ├── rparticle.typ
 │   └── ...
 ├── qrcodes/                     # Print mode only
 │   ├── a1b2c3d4e5f6.png        # QR code PNGs (MD5 hash filenames)
 │   └── ...
 └── output/
     ├── banks-online.pdf         # Final output (online mode)
-    └── banks-print.pdf          # Final output (print mode)
+    ├── banks-print.pdf          # Final output (print mode)
+    ├── banks-online-debug.pdf   # Only when built with --debug
+    └── banks-print-debug.pdf    # Only when built with --debug
 ```
 
-The `build/` directory is gitignored and fully regenerated on each build. The `qrcodes/` subdirectory uses content-addressable filenames (MD5 of URL), so unchanged URLs don't regenerate.
+The `build/` directory is gitignored and fully regenerated on each build. There is exactly one `.typ` per article regardless of how many pages it spans (Typst splits at render time). `data.json` is rewritten for each mode that is built. The `qrcodes/` subdirectory uses content-addressable filenames (MD5 of URL), so unchanged URLs don't regenerate.
 
 ---
 
@@ -1102,7 +1136,7 @@ The `build/` directory is gitignored and fully regenerated on each build. The `q
    ---
    Article body...
    ```
-2. Add a placement entry in `layout.yaml`:
+2. Add a placement entry in the layout file(s) -- `layout-online.yaml` and/or `layout-print.yaml` (or `layout.yaml` if you keep a single shared layout). Remember to add it for **every** mode you build:
    ```yaml
    - slug: my-article
      column_width: 3
@@ -1110,7 +1144,7 @@ The `build/` directory is gitignored and fully regenerated on each build. The `q
      placements:
        - page: 2
          cells:
-           - [[0, 0], [5, 5]]
+           - [[0, 0], [11, 5]]
    ```
 3. Run `make all` to build.
 
@@ -1183,13 +1217,14 @@ Add multiple placement entries:
         - [[0, 0], [5, 5]]
 ```
 
-The build script splits the converted Typst content into parts at paragraph boundaries. The Typst renderer shows "Continued on page N" / "Continued from page N" markers.
+No splitting markup is needed: the full body is written once and Typst flows it across the listed pages at render time, filling each page's area by measurement. The renderer adds "Continued on page N" / "Continued from page N" markers automatically.
 
 ### Debug content overflow
 
 1. Run `make strict` to make overflow errors fatal.
 2. Check stderr for overflow warnings: `WARNING: [online] Article 'slug' content overflows (needs X, allocated Y)`.
-3. Possible fixes:
+3. Run `make online-debug` (or `make print-debug`) and open `banks-<mode>-debug.pdf` to *see* the overrun: a red band + `OVERFLOW: …` label marks the column that didn't fit, over the grid/region overlays.
+4. Possible fixes:
    - Give the article more grid cells
    - Reduce the text content
    - Use a smaller `column_width` (more text columns = more space)

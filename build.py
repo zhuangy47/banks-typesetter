@@ -37,7 +37,7 @@ API_URL = "https://core.acm.illinois.edu/api/v1/organizations"
 # Markdown → Typst conversion
 # ---------------------------------------------------------------------------
 
-def md_to_typst(text: str, mode: str, slug: str,
+def md_to_typst(text: str, mode: str,
                 placed_images: set[str] | None = None,
                 qr_map: dict[str, str] | None = None,
                 image_widths: dict[str, int] | None = None,
@@ -63,7 +63,7 @@ def md_to_typst(text: str, mode: str, slug: str,
     result_lines: list[str] = []
 
     for line in lines:
-        line = _convert_line(line, mode, slug, placed_images, qr_map, image_widths, image_borders)
+        line = _convert_line(line, mode, placed_images, qr_map, image_widths, image_borders)
         result_lines.append(line)
 
     result = "\n".join(result_lines)
@@ -73,7 +73,7 @@ def md_to_typst(text: str, mode: str, slug: str,
     return result
 
 
-def _convert_line(line: str, mode: str, slug: str, placed_images: set[str],
+def _convert_line(line: str, mode: str, placed_images: set[str],
                    qr_map: dict[str, str] | None = None,
                    image_widths: dict[str, int] | None = None,
                    image_borders: dict[str, float] | None = None) -> str:
@@ -90,32 +90,19 @@ def _convert_line(line: str, mode: str, slug: str, placed_images: set[str],
         basename = os.path.basename(src)
         if basename in placed_images:
             return ""  # removed; placed by grid engine
-        img_path = f"/articles/images/{basename}"
-        width_pct = image_widths.get(basename, 100)
-        width_str = f"{width_pct}%"
+        img_path = "/" + str((IMAGES_DIR / basename).relative_to(ROOT))
+        width_str = f"{image_widths.get(basename, 100)}%"
         border_pt = image_borders.get(basename, 1)
-        border_str = f"{border_pt}pt"
+        img = f'image("{img_path}", width: {width_str})'
         if border_pt > 0:
             # Pad the outer container so the border stroke (centered on the
             # box edge) is not clipped at column boundaries.
-            pad = f"{border_pt}pt"
-            if alt:
-                return (
-                    f'#align(center, pad({pad}, box(stroke: {border_str}, image("{img_path}", width: {width_str}))))\n'
-                    f'#v(2pt)\n'
-                    f'#align(center, text(size: 7pt, style: "italic")[{alt}])'
-                )
-            else:
-                return f'#align(center, pad({pad}, box(stroke: {border_str}, image("{img_path}", width: {width_str}))))'
-        else:
-            if alt:
-                return (
-                    f'#align(center, image("{img_path}", width: {width_str}))\n'
-                    f'#v(2pt)\n'
-                    f'#align(center, text(size: 7pt, style: "italic")[{alt}])'
-                )
-            else:
-                return f'#align(center, image("{img_path}", width: {width_str}))'
+            border_str = f"{border_pt}pt"
+            img = f'pad({border_str}, box(stroke: {border_str}, {img}))'
+        figure = f'#align(center, {img})'
+        if alt:
+            figure += f'\n#v(2pt)\n#align(center, text(size: 7pt, style: "italic")[{alt}])'
+        return figure
 
     # --- italic caption lines like *caption text* ---
     caption_match = re.match(r'^\*([^*]+)\*\s*$', line)
@@ -629,7 +616,7 @@ def load_article(path: Path) -> dict:
     # Parse YAML frontmatter
     fm_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', text, re.DOTALL)
     if fm_match:
-        frontmatter = yaml.safe_load(fm_match.group(1))
+        frontmatter = yaml.safe_load(fm_match.group(1)) or {}
         body = text[fm_match.end():]
     else:
         frontmatter = {}
@@ -638,137 +625,9 @@ def load_article(path: Path) -> dict:
         "slug": path.stem,
         "title": frontmatter.get("title", path.stem),
         "authors": frontmatter.get("authors", []),
+        "author": frontmatter.get("author", ""),
         "body": body.strip(),
     }
-
-
-def count_article_pages(layout: dict, slug: str) -> int:
-    """Count how many pages an article spans."""
-    for article in layout["articles"]:
-        if article["slug"] == slug:
-            return len(article["placements"])
-    return 1
-
-
-def split_into_parts(typ_content: str, num_parts: int) -> list[str]:
-    """Split Typst content into parts at paragraph boundaries.
-
-    Splits at blank lines (paragraph breaks) as evenly as possible.
-    """
-    # Split into paragraphs (separated by blank lines)
-    paragraphs: list[str] = []
-    current: list[str] = []
-    for line in typ_content.split("\n"):
-        if line.strip() == "" and current:
-            paragraphs.append("\n".join(current))
-            current = []
-        else:
-            current.append(line)
-    if current:
-        paragraphs.append("\n".join(current))
-
-    # Filter out empty paragraphs
-    paragraphs = [p for p in paragraphs if p.strip()]
-
-    if len(paragraphs) <= num_parts:
-        # Not enough paragraphs to split evenly; put one per part
-        parts = []
-        for i in range(num_parts):
-            if i < len(paragraphs):
-                parts.append(paragraphs[i])
-            else:
-                parts.append("")
-        return parts
-
-    # Distribute paragraphs as evenly as possible
-    base_count = len(paragraphs) // num_parts
-    remainder = len(paragraphs) % num_parts
-    parts = []
-    idx = 0
-    for i in range(num_parts):
-        count = base_count + (1 if i < remainder else 0)
-        part_paras = paragraphs[idx:idx + count]
-        parts.append("\n\n".join(part_paras))
-        idx += count
-
-    return parts
-
-
-def split_into_weighted_parts(typ_content: str, weights: list[int]) -> list[str]:
-    """Split Typst content at paragraph boundaries, proportional to weights.
-
-    Each weight represents the relative area of a band.  Paragraphs are
-    distributed so that the proportion of paragraphs roughly matches the
-    proportion of weights.
-    """
-    paragraphs: list[str] = []
-    current: list[str] = []
-    for line in typ_content.split("\n"):
-        if line.strip() == "" and current:
-            paragraphs.append("\n".join(current))
-            current = []
-        else:
-            current.append(line)
-    if current:
-        paragraphs.append("\n".join(current))
-    paragraphs = [p for p in paragraphs if p.strip()]
-
-    num_parts = len(weights)
-    if len(paragraphs) <= num_parts:
-        parts: list[str] = []
-        for i in range(num_parts):
-            parts.append(paragraphs[i] if i < len(paragraphs) else "")
-        return parts
-
-    parts = []
-    idx = 0
-    for i in range(num_parts):
-        if i == num_parts - 1:
-            # Last part gets everything remaining
-            part_paras = paragraphs[idx:]
-        else:
-            remaining = len(paragraphs) - idx
-            prop = weights[i] / sum(weights[i:])
-            count = max(1, round(remaining * prop))
-            part_paras = paragraphs[idx:idx + count]
-            idx += count
-        parts.append("\n\n".join(part_paras))
-
-    return parts
-
-
-def _placement_text_area(placement: dict) -> int:
-    """Estimate text area for a placement in grid-cell units.
-
-    Sums the cell area of all article cell ranges, then subtracts
-    the area of any grid-mode images (inline images don't consume
-    grid cells from the text area).
-    """
-    area = 0
-    for (r1, c1), (r2, c2) in placement.get("cells", []):
-        area += (r2 - r1 + 1) * (c2 - c1 + 1)
-    for img in placement.get("images", []):
-        if img.get("mode", "grid") == "grid":
-            for (r1, c1), (r2, c2) in img.get("cells", []):
-                area -= (r2 - r1 + 1) * (c2 - c1 + 1)
-    return max(area, 1)
-
-
-def _get_placement_weights(layout: dict, slug: str) -> list[int]:
-    """Return area-based weights for each placement of a multi-page article."""
-    for article in layout["articles"]:
-        if article["slug"] == slug:
-            return [_placement_text_area(p) for p in article["placements"]]
-    return [1]
-
-
-def _get_first_placement(layout: dict, slug: str) -> dict | None:
-    """Return the first placement dict for the given article slug."""
-    for article in layout["articles"]:
-        if article["slug"] == slug:
-            if article["placements"]:
-                return article["placements"][0]
-    return None
 
 
 def get_inline_image_scales(layout: dict, slug: str) -> dict[str, int]:
@@ -990,7 +849,7 @@ def main():
             for _, url in extract_urls_from_markdown(lftc["body"]):
                 all_urls.append(url)
             qr_dir = BUILD / "qrcodes"
-            qr_map = generate_qr_codes(list(set(all_urls)), qr_dir)
+            qr_map = generate_qr_codes(sorted(set(all_urls)), qr_dir)
             print(f"  Generated {len(qr_map)} QR codes")
 
         # 8. Convert articles to .typ
@@ -999,12 +858,12 @@ def main():
             placed = get_placed_images(layout, slug)
             img_widths = get_inline_image_scales(layout, slug)
             img_borders = get_inline_image_borders(layout, slug)
-            typ_content = md_to_typst(article["body"], mode, slug, placed, qr_map, img_widths, img_borders)
+            typ_content = md_to_typst(article["body"], mode, placed, qr_map, img_widths, img_borders)
 
             (build_articles / f"{slug}.typ").write_text(typ_content)
 
         # 9. Convert LFTC
-        lftc_typ = md_to_typst(lftc["body"], mode, "lftc", qr_map=qr_map)
+        lftc_typ = md_to_typst(lftc["body"], mode, qr_map=qr_map)
         (BUILD / "lftc.typ").write_text(lftc_typ)
 
         # 10. Merge image captions from markdown alt text into layout
@@ -1019,8 +878,7 @@ def main():
             "directory": directory,
             "layout": layout,
             "lftc": {
-                "author": lftc.get("authors", [lftc.get("author", "")])[0]
-                    if lftc.get("authors") else lftc["title"],
+                "author": lftc["author"],
                 "body_file": "lftc.typ",
             },
             "articles": {
@@ -1036,17 +894,9 @@ def main():
             "mode": mode,
         }
 
-        # Handle LFTC author from frontmatter
-        lftc_fm = {}
-        lftc_text = (ROOT / "lftc.md").read_text()
-        fm_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', lftc_text, re.DOTALL)
-        if fm_match:
-            lftc_fm = yaml.safe_load(fm_match.group(1))
-        data["lftc"]["author"] = lftc_fm.get("author", "")
-
         (BUILD / "data.json").write_text(json.dumps(data, indent=2))
 
-        # 11. Compile with Typst
+        # 12. Compile with Typst
         print("Compiling with Typst...")
         suffix = f"{mode}-debug" if args.debug else mode
         output_file = BUILD / "output" / f"banks-{suffix}.pdf"
@@ -1067,7 +917,7 @@ def main():
             sys.exit(1)
         print(f"  Output: {output_file}")
 
-        # 12. Check for content overflow via Typst metadata query
+        # 13. Check for content overflow via Typst metadata query
         post_overflows = _check_typst_overflow(mode)
         post_overflow_total += post_overflows
         if post_overflows:
