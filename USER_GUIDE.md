@@ -76,9 +76,24 @@ Both read and write the same files, so anything you do in one shows up in the ot
 
 ## 4. Anatomy of an issue
 
+**Each issue lives in its own folder under `issues/`** — for example `issues/vol43-iss1/`. All the per-issue files below sit inside that folder; throughout this guide, when we say "edit `config.yaml`", we mean the one in your issue's folder.
+
+```
+issues/vol43-iss1/
+├── config.yaml          # the file paths below are all relative to here
+├── events.yaml
+├── lftc.md
+├── layout-online.yaml
+├── layout-print.yaml
+├── horoscope.yaml       (optional)
+└── articles/
+    ├── <name>.md
+    └── images/
+```
+
 Here's where each part of the printed paper comes from:
 
-| File / folder | Controls |
+| File / folder (in your issue folder) | Controls |
 |---|---|
 | `config.yaml` | Volume, issue, date, headline, subtitle, URL, editor names, "Get Featured" email, and the directory order |
 | `events.yaml` | The "Upcoming Events" box on the title page |
@@ -86,11 +101,16 @@ Here's where each part of the printed paper comes from:
 | `articles/<name>.md` | One article (its title, authors, and body text) |
 | `articles/images/` | Image files used by articles |
 | `layout-online.yaml` / `layout-print.yaml` | Where each article and image sits on each page, for each edition |
-| `blurbs/<org>.yaml` | An org's description and meeting times in the directory |
-| `logo/<org>.png` | An org's logo in the directory and on the banner |
 | `horoscope.yaml` *(optional)* | Adds a horoscope page if present |
 
-The **table of contents** and the **"Continued on page…"** markers are generated automatically — you don't write them.
+A few things live at the **repo root** and are shared across all issues (you rarely touch them per-issue):
+
+| File / folder | Controls |
+|---|---|
+| `blurbs/<org>.yaml` | An org's description and meeting times in the directory |
+| `logo/<org>.png` | An org's logo in the directory and on the banner |
+
+Builds use the **most-recently-edited issue folder by default**, or you can name one explicitly with `ISSUE=` (see [Building the PDFs](#11-building-the-pdfs)). The **table of contents** and the **"Continued on page…"** markers are generated automatically — you don't write them.
 
 ---
 
@@ -223,7 +243,7 @@ Layout is where you decide which article goes where. Each **edition has its own 
 - `layout-online.yaml` — the online edition
 - `layout-print.yaml` — the print edition (often needs a bit more room for QR codes)
 
-If you only keep one layout, you can use `layout.yaml` and both editions will use it. **A common workflow is to lay out one edition, then copy it to the other and adjust** (the web editor has a "Copy to other mode" button for exactly this).
+**Both files are required** — the build stops with an error if either is missing. **A common workflow is to lay out one edition, then copy it to the other and adjust** (the web editor has a "Copy to other mode" button for exactly this; from the terminal, copy one onto the other inside your issue folder).
 
 ### The page grid
 
@@ -398,7 +418,17 @@ From the project folder:
 | `make print` | Build the print edition only |
 | `make online-debug` | Online build with layout guides drawn on top (see below) |
 | `make print-debug` | Print build with layout guides |
+| `make new-issue ISSUE=<name>` | Create a new issue folder from the template |
 | `make clean` | Delete the generated files and start fresh |
+
+**Which issue gets built?** By default, the most-recently-edited folder under `issues/`. If you're working on the latest issue that's automatic. To build a specific one, add `ISSUE=<folder>`:
+
+```bash
+make all ISSUE=vol43-iss1
+make online ISSUE=vol43-iss1
+```
+
+To start a brand-new issue, `make new-issue ISSUE=vol43-iss2` copies the `issues/_template/` skeleton into `issues/vol43-iss2/` for you to fill in.
 
 The finished PDFs land in **`build/output/`**:
 
@@ -451,7 +481,8 @@ The debug PDF draws the grid and outlines each article's regions, and marks any 
 If you'd rather work visually:
 
 ```bash
-make ui
+make ui                    # edits the most-recent issue
+make ui ISSUE=vol43-iss1   # or target a specific issue
 ```
 
 Then open **http://localhost:3000**. There are four tabs:
@@ -471,15 +502,16 @@ Everything you save here writes the same files described above, so you can switc
 
 ## 14. Starting a fresh issue — checklist
 
-1. **Bump the masthead** in `config.yaml`: `volume`, `issue`, `date`, `headline`, and `editors`.
-2. **Update the Letter from the Chair** (`lftc.md`).
-3. **Refresh `events.yaml`** with the events you want featured.
-4. **Add the new articles** as `articles/<slug>.md`, with images dropped in `articles/images/`.
-5. **Lay them out**: place each article (and its images) in `layout-online.yaml` and `layout-print.yaml`.
-6. **Build and review**: `make all`, then open the PDFs.
-7. **Check the fit**: resolve any overflow warnings (use `make online-debug` / `make print-debug` to see them).
-8. **Final pass**: `make strict` to confirm nothing overflows; eyeball both editions one more time.
-9. The directory and table of contents take care of themselves.
+1. **Create the issue folder**: `make new-issue ISSUE=vol43-iss2` (copies `issues/_template/`). Everything below happens inside `issues/vol43-iss2/`.
+2. **Bump the masthead** in `config.yaml`: `volume`, `issue`, `date`, `headline`, and `editors`.
+3. **Update the Letter from the Chair** (`lftc.md`).
+4. **Refresh `events.yaml`** with the events you want featured.
+5. **Add the new articles** as `articles/<slug>.md`, with images dropped in `articles/images/`.
+6. **Lay them out**: place each article (and its images) in `layout-online.yaml` and `layout-print.yaml`.
+7. **Build and review**: `make all` (it picks your new issue automatically, since it's the most recently edited — or be explicit with `make all ISSUE=vol43-iss2`), then open the PDFs.
+8. **Check the fit**: resolve any overflow warnings (use `make online-debug` / `make print-debug` to see them).
+9. **Final pass**: `make strict` to confirm nothing overflows; eyeball both editions one more time.
+10. The directory and table of contents take care of themselves.
 
 ---
 

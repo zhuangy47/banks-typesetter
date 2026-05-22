@@ -39,7 +39,7 @@ Everything in `build/` is generated and gitignored.
 
 ## Per-mode layouts
 
-`build.py` loads `layout-<mode>.yaml` (e.g. `layout-online.yaml`, `layout-print.yaml`), falling back to `layout.yaml` if the mode-specific file is missing. Online and print can therefore differ (print typically reflows to leave room for QR codes). The web UI reads/writes the mode-specific file. Keep all three files' `grid:` blocks consistent unless you intend them to differ.
+`build.py` loads the active issue's `layout-<mode>.yaml` (`layout-online.yaml` or `layout-print.yaml`). Both files are required — the build exits with an error if either is missing; there is no shared `layout.yaml` fallback. Online and print can therefore differ (print typically reflows to leave room for QR codes); the web UI's "Copy to other mode" button duplicates one into the other. Keep both files' `grid:` blocks consistent unless you intend them to differ.
 
 ## Grid coordinate convention (the #1 gotcha)
 
@@ -71,13 +71,21 @@ Line-based regex conversion. Beyond the usual headings / bold / italic / lists /
 
 ## Content & config files
 
+Each issue's inputs live in `issues/<id>/` (e.g. `issues/vol43-iss1/`). `build.py` resolves the active issue from `--issue <id>`, defaulting to the most-recently-modified folder under `issues/` (ignoring `_template/` and dotfiles); `ui/app.py` does the same via the `BANKS_ISSUE` env var. `make new-issue ISSUE=<id>` scaffolds one from `issues/_template/`.
+
+Per-issue (under `issues/<id>/`):
 - `config.yaml` — publication metadata + `directory_order` (controls org ordering in the directory).
 - `events.yaml` — events on the title page.
-- `articles/<slug>.md` — article; frontmatter `title` + `authors`. Body images live in `articles/images/`.
+- `articles/<slug>.md` — article; frontmatter `title` + `authors`. Body images live in `articles/<...>/images/`.
 - `lftc.md` — Letter from the Chair; frontmatter `author` (singular).
+- `layout-online.yaml` / `layout-print.yaml` — see [Per-mode layouts](#per-mode-layouts).
 - `horoscope.yaml` — optional; if present, a horoscope page is appended.
+
+Shared across issues (repo root):
 - `blurbs/<slug>.yaml` — per-org `blurb` + `meeting_times`, merged with API data.
 - `logo/<slug>.{png,jpg,jpeg,svg}` — org logos (extension auto-detected).
+
+`build.py` sets `ARTICLES_DIR`/`IMAGES_DIR` from the resolved issue at runtime and writes `data.json`'s `images_base` (the root-relative image dir, e.g. `/issues/<id>/articles/images`); `typst/main.typ` passes it to `render-article-page` so grid images resolve. Inline images already use the same root-relative path computed in `build.py`.
 
 ## Directory data (ACM Core API)
 
@@ -85,7 +93,7 @@ Org data is fetched from `https://core.acm.illinois.edu/api/v1/organizations` at
 
 **Adding an org** generally means: an entry in `slug_map` (if the name doesn't auto-derive), a `blurbs/<slug>.yaml`, a `logo/<slug>.*`, and a line in `config.yaml` `directory_order`.
 
-**Adding an article** means: `articles/<slug>.md`, plus a matching `slug` with `placements` in the relevant `layout-*.yaml`. Layout validation (`validate_layout`) is strict and fails the build on: out-of-bounds cells, non-contiguous article cells, non-rectangular image cells, cells shared between two articles/images, missing image/article files, and a `column_width` that doesn't divide the article's width.
+**Adding an article** means: `issues/<id>/articles/<slug>.md`, plus a matching `slug` with `placements` in that issue's `layout-online.yaml` and `layout-print.yaml`. Layout validation (`validate_layout`) is strict and fails the build on: out-of-bounds cells, non-contiguous article cells, non-rectangular image cells, cells shared between two articles/images, missing image/article files, and a `column_width` that doesn't divide the article's width.
 
 ## Web UI (`ui/app.py`)
 

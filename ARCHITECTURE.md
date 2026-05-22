@@ -11,7 +11,7 @@ This document explains, in full detail, how every piece of the Banks of the Bone
 3. [Prerequisites & Setup](#3-prerequisites--setup)
 4. [Configuration Files](#4-configuration-files)
    - 4.1 [config.yaml](#41-configyaml)
-   - 4.2 [layout.yaml](#42-layoutyaml)
+   - 4.2 [Layout files](#42-layout-modeyaml)
    - 4.3 [events.yaml](#43-eventsyaml)
    - 4.4 [lftc.md](#44-lftcmd)
 5. [Content Authoring](#5-content-authoring)
@@ -79,7 +79,7 @@ Banks of the Boneyard is a two-stage typesetting pipeline:
                          └─────────────────────┘
 ```
 
-**Stage 1 (Python)** handles all data ingestion: it loads YAML configuration, fetches live organization data from the ACM Core API, validates layout constraints, converts Markdown articles to Typst markup, generates QR codes for print mode, and writes everything into a `build/` directory as `data.json` plus `.typ` fragment files. Multi-page article splitting is **not** done here -- each article body is written as a single fragment and Typst splits it across pages at render time (see [Section 6.9](#69-step-9----multi-page-articles)). The layout is read **per mode** from `layout-<mode>.yaml` (falling back to `layout.yaml`), so online and print can use different placements.
+**Stage 1 (Python)** handles all data ingestion: it loads YAML configuration, fetches live organization data from the ACM Core API, validates layout constraints, converts Markdown articles to Typst markup, generates QR codes for print mode, and writes everything into a `build/` directory as `data.json` plus `.typ` fragment files. Multi-page article splitting is **not** done here -- each article body is written as a single fragment and Typst splits it across pages at render time (see [Section 6.9](#69-step-9----multi-page-articles)). The layout is read **per mode** from `layout-<mode>.yaml` (`layout-online.yaml` / `layout-print.yaml`; both are required), so online and print can use different placements.
 
 **Stage 2 (Typst)** reads `data.json` and the generated `.typ` fragments, then renders the final PDF. The Typst template system handles page layout, grid-based absolute positioning, multi-column text flow, image placement, the title page, the organization directory, and optional sections like horoscopes.
 
@@ -96,25 +96,23 @@ new_banks/
 ├── build.py                  # Main build script (Python stage)
 ├── Makefile                  # Build automation
 ├── requirements.txt          # Python dependencies
-├── config.yaml               # Publication metadata
-├── layout-online.yaml        # Grid-based placement DSL (online mode)
-├── layout-print.yaml         # Grid-based placement DSL (print mode)
-├── layout.yaml               # Fallback layout if a mode-specific file is absent
-├── events.yaml               # Upcoming events for title page
-├── lftc.md                   # Letter from the Chair (markdown)
-├── articles/                 # Article markdown files
-│   ├── banks.md
-│   ├── icpc.md
-│   ├── ...
-│   └── images/               # Article images (referenced by markdown & layout)
-│       ├── career_fair.jpg
-│       ├── icpc.jpg
-│       └── ...
-├── blurbs/                   # Organization descriptions (one YAML per org)
+├── issues/                   # One folder per issue (the per-issue inputs)
+│   ├── _template/            # Skeleton copied by `make new-issue`
+│   └── vol43-iss1/
+│       ├── config.yaml       # Publication metadata
+│       ├── layout-online.yaml  # Grid placement DSL (online mode; required)
+│       ├── layout-print.yaml   # Grid placement DSL (print mode; required)
+│       ├── events.yaml       # Upcoming events for title page
+│       ├── lftc.md           # Letter from the Chair (markdown)
+│       └── articles/         # Article markdown files
+│           ├── banks.md
+│           ├── ...
+│           └── images/       # Article images (referenced by markdown & layout)
+├── blurbs/                   # Organization descriptions (one YAML per org; shared)
 │   ├── acm.yaml
 │   ├── sigplan.yaml
 │   └── ...  (44 files total)
-├── logo/                     # Organization logos
+├── logo/                     # Organization logos (shared)
 │   ├── acm.png
 │   ├── acm-logo.png          # Used on title page banner
 │   ├── banks-logo.png        # Used on title page banner
@@ -177,16 +175,21 @@ This runs `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` a
 | `make strict` | Build print PDF; exit non-zero if any article overflows |
 | `make online-debug` | Build online PDF with debug overlays (grid lines, bounding boxes, overflow bands) |
 | `make print-debug` | Build print PDF with debug overlays |
+| `make new-issue ISSUE=<name>` | Copy `issues/_template/` into `issues/<name>/` |
 | `make ui` | Start the Flask web editor (http://localhost:3000) |
 | `make clean` | Delete the `build/` directory |
 
-Direct invocation: `.venv/bin/python build.py --mode online|print|both [--strict] [--debug]`
+**Selecting the issue.** All build targets accept `ISSUE=<name>` (e.g. `make all ISSUE=vol43-iss1`), which is passed through as `--issue`. Without it, the build uses the most-recently-modified folder under `issues/`. `make ui` forwards `ISSUE` to the editor via the `BANKS_ISSUE` environment variable.
+
+Direct invocation: `.venv/bin/python build.py --mode online|print|both [--strict] [--debug] [--issue NAME]`
 
 `--debug` passes `debug=true` to Typst, which draws the grid, per-article/image bounding boxes, text-column outlines, and red overflow bands. Debug builds are written to `banks-<mode>-debug.pdf` so they don't clobber the normal output.
 
 ---
 
 ## 4. Configuration Files
+
+These all live inside the active issue's folder, `issues/<id>/` (see [Section 6.1](#61-step-1----resolve-the-issue--load-configuration) for how the issue is chosen).
 
 ### 4.1 config.yaml
 
@@ -219,7 +222,7 @@ directory_order:             # MUST list every org slug from the API
 
 This is the heart of the placement system. It defines a grid and specifies where every article and image sits on each page. A full explanation of the layout DSL is in [Section 7](#7-the-layout-system-in-depth).
 
-**Per-mode layouts.** `build.py` loads `layout-<mode>.yaml` for the mode being built (`layout-online.yaml` or `layout-print.yaml`), falling back to `layout.yaml` only if the mode-specific file does not exist. This lets the print edition reflow differently from the online edition (e.g., leaving room for QR codes). The web UI reads and writes the mode-specific file. Keep the three files' `grid:` blocks consistent unless you intend them to differ.
+**Per-mode layouts.** `build.py` loads `layout-<mode>.yaml` for the mode being built (`layout-online.yaml` or `layout-print.yaml`). **Both files are required**; the build exits with an error if the one for the mode being built is missing (there is no shared `layout.yaml` fallback). This lets the print edition reflow differently from the online edition (e.g., leaving room for QR codes). The web UI reads and writes the mode-specific file, and its "Copy to other mode" button duplicates one into the other. Keep both files' `grid:` blocks consistent unless you intend them to differ.
 
 **Top-level structure:**
 
@@ -376,22 +379,28 @@ Organization logos live in `logo/<slug>.{png,jpg,jpeg,svg}`. The build script ch
 
 **Once-per-run vs. per-mode.** The config/events/horoscope load, API fetch, and article/LFTC load (Steps 1, 4, 5 below) happen a single time. Everything else -- layout load + validation, text-column computation, TOC, QR codes, conversion, caption merge, `data.json` write, compile, and overflow check -- runs once **per mode** inside the mode loop, because each mode has its own `layout-<mode>.yaml`.
 
-### 6.1 Step 1 -- Load Configuration
+### 6.1 Step 1 -- Resolve the Issue & Load Configuration
+
+All per-issue inputs live in `issues/<id>/`. `resolve_issue(args.issue)` picks the active issue -- the named one with `--issue NAME`, otherwise the most-recently-modified folder under `issues/` (ignoring `_template/` and dotfiles) -- and `main()` points the per-issue path globals at it:
 
 ```python
-config = yaml.safe_load(open("config.yaml"))
-events_data = yaml.safe_load(open("events.yaml"))
+issue_dir = resolve_issue(args.issue)
+ARTICLES_DIR = issue_dir / "articles"          # module globals, reassigned here
+IMAGES_DIR = ARTICLES_DIR / "images"
+
+config = yaml.safe_load(open(issue_dir / "config.yaml"))
+events_data = yaml.safe_load(open(issue_dir / "events.yaml"))
 # Optional:
-horoscope = yaml.safe_load(open("horoscope.yaml"))  # if file exists
+horoscope = yaml.safe_load(open(issue_dir / "horoscope.yaml"))  # if file exists
 
 # ...later, inside the per-mode loop:
-layout_path = ROOT / f"layout-{mode}.yaml"
+layout_path = issue_dir / f"layout-{mode}.yaml"
 if not layout_path.exists():
-    layout_path = ROOT / "layout.yaml"   # fallback
+    sys.exit(1)   # both layout-online.yaml and layout-print.yaml are required
 layout = yaml.safe_load(open(layout_path))
 ```
 
-`config.yaml`, `events.yaml`, and the optional `horoscope.yaml` are loaded once and kept in memory. The horoscope file is optional -- if absent, `horoscope` is `None` and the Typst template skips the horoscope page. The **layout** is loaded inside the per-mode loop, choosing `layout-<mode>.yaml` and falling back to `layout.yaml`. Each article's `placements` are then sorted by page number.
+`ARTICLES_DIR` / `IMAGES_DIR` are module-level globals reassigned once the issue is known, so `validate_layout()` and `md_to_typst()` (which read them) pick up the issue's paths. `blurbs/` and `logo/` stay at the repo root (shared across issues). `config.yaml`, `events.yaml`, and the optional `horoscope.yaml` are loaded once; the **layout** is loaded inside the per-mode loop from `layout-<mode>.yaml` (missing → the build exits). Each article's `placements` are then sorted by page number.
 
 ### 6.2 Step 2 -- Validate Layout
 
@@ -537,9 +546,9 @@ There are no `-part0.typ` / `-part1.typ` files. An article spans multiple pages 
 
 ### 6.10 Step 10 -- Merge Image Captions
 
-`merge_image_captions()` extracts alt text from markdown image syntax (`![alt text](path)`) and merges it into `layout.yaml` image entries that don't have an explicit `caption` field. This allows authors to write captions naturally in markdown while still using grid-mode placement.
+`merge_image_captions()` extracts alt text from markdown image syntax (`![alt text](path)`) and merges it into the layout's image entries that don't have an explicit `caption` field. This allows authors to write captions naturally in markdown while still using grid-mode placement.
 
-Priority: explicit `caption` in `layout.yaml` > alt text from markdown > no caption.
+Priority: explicit `caption` in the layout > alt text from markdown > no caption.
 
 ### 6.11 Step 11 -- Write data.json
 
@@ -551,13 +560,14 @@ All merged metadata is written to `build/data.json`:
   "events": [ /* from events.yaml */ ],
   "toc": [ /* {slug, title, authors, page} */ ],
   "directory": [ /* merged org data, ordered */ ],
-  "layout": { /* from layout.yaml, with text_columns added */ },
+  "layout": { /* from the mode's layout file, with text_columns added */ },
   "lftc": { "author": "...", "body_file": "lftc.typ" },
   "articles": {
     "slug": { "title": "...", "authors": [...], "typ_file": "articles/slug.typ" }
   },
   "qr_codes": { "url": "qrcodes/hash.png" },
   "horoscope": null,
+  "images_base": "/issues/vol43-iss1/articles/images",
   "mode": "online"
 }
 ```
@@ -934,7 +944,9 @@ The title page is wrapped in `block(height: 100%, ...)` in `main.typ` to ensure 
 
 `typst/lib/article-page.typ` (~320 lines) handles all article pages.
 
-**`render-article-page(page-num, layout-data, articles-data, mode, debug: false)`**:
+**`render-article-page(page-num, layout-data, articles-data, mode, image-base: "/articles/images", debug: false)`**:
+
+`image-base` is the root-relative directory of the issue's images, threaded in from `main.typ` (which reads `data.images_base`). Grid-image paths are built as `image-base + "/" + img.src`, so they resolve under whichever `issues/<id>/articles/images` the active issue uses. (Inline-image paths are already fully formed by `build.py`.)
 
 1. Parses the grid configuration from the layout's `grid:` block (evaluating `"8pt"` strings into Typst lengths via `eval`).
 
@@ -1063,14 +1075,14 @@ The mode is:
 
 The optional Flask web UI (`ui/app.py`) provides a browser-based editor for managing the newspaper.
 
-**Server**: `make ui` starts Flask on `http://localhost:3000`.
+**Server**: `make ui` starts Flask on `http://localhost:3000`. It operates on a single issue, resolved at startup from the `BANKS_ISSUE` environment variable (set by `make ui ISSUE=<name>`), falling back to the most-recently-modified `issues/<name>/` folder -- the same rule `build.py` uses. Builds it triggers pass that issue through as `--issue`.
 
 **REST API endpoints:**
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | GET | Serve the editor HTML |
-| `/api/layout?mode=<mode>` | GET/PUT | Read/update the mode-specific `layout-<mode>.yaml` (falls back to `layout.yaml`); PUT re-serializes via `serialize_layout()` |
+| `/api/layout?mode=<mode>` | GET/PUT | Read/update the mode-specific `layout-<mode>.yaml`; PUT re-serializes via `serialize_layout()` |
 | `/api/layout/copy` | POST | Copy one mode's layout to the other (`{"from": "online", "to": "print"}`) |
 | `/api/config` | GET/PUT | Read/update `config.yaml` |
 | `/api/events` | GET/PUT | Read/update `events.yaml` |
@@ -1127,7 +1139,7 @@ The `build/` directory is gitignored and fully regenerated on each build. There 
 
 ### Add a new article
 
-1. Create `articles/my-article.md` with frontmatter:
+1. Create `issues/<id>/articles/my-article.md` with frontmatter:
    ```markdown
    ---
    title: "My Article"
@@ -1136,7 +1148,7 @@ The `build/` directory is gitignored and fully regenerated on each build. There 
    ---
    Article body...
    ```
-2. Add a placement entry in the layout file(s) -- `layout-online.yaml` and/or `layout-print.yaml` (or `layout.yaml` if you keep a single shared layout). Remember to add it for **every** mode you build:
+2. Add a placement entry in **both** layout files -- `layout-online.yaml` and `layout-print.yaml`. Remember to add it for every mode you build, or that mode's build will simply omit the article:
    ```yaml
    - slug: my-article
      column_width: 3
@@ -1163,7 +1175,7 @@ placements:
           - [[4, 4], [5, 5]]
         caption: "Photo caption"
 ```
-Place `my-photo.jpg` in `articles/images/`.
+Place `my-photo.jpg` in the issue's `articles/images/`.
 
 **Inline** (in markdown flow):
 ```yaml
